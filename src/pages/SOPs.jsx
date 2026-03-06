@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { SOPs, Sites } from "@/api/supabaseClient";
+import { SOPs as SOPsEntity, Sites } from "@/api/supabaseClient";
 import { FileText, Plus, X, CheckSquare, Trash2 } from "lucide-react";
 
 export default function SOPs() {
@@ -24,7 +24,7 @@ export default function SOPs() {
     setLoading(true);
     const isAdmin = o.role === "admin" || o.role === "supervisor";
     const [s, si] = await Promise.all([
-      SOPS.list({ status: "active" }),
+      SOPsEntity.list({ status: "active" }),
       Sites.list({ status: "active" }),
     ]);
     setSops(isAdmin ? s : s.filter(sop => o.assigned_sites?.includes(SOPS.site_id)));
@@ -37,21 +37,21 @@ export default function SOPs() {
     const alreadyAcked = acks.some(a => a.officer_id === officer.id && a.version === SOPS.version);
     if (alreadyAcked) return;
     const updated = [...acks, { officer_id: officer.id, officer_name: officer.full_name, acknowledged_at: new Date().toISOString(), version: SOPS.version }];
-    await SOPS.update(SOPS.id, { acknowledgments: updated });
+    await SOPsEntity.update(SOPS.id, { acknowledgments: updated });
     loadData(officer);
     setSelected({ ...sop, acknowledgments: updated });
   };
 
   const handleCreate = async () => {
     const site = sites.find(s => s.id === form.site_id);
-    await SOPS.create({ ...form, company_code: officer.company_code, site_name: site?.name || "", version: "1.0", status: "active", acknowledgments: [] });
+    await SOPsEntity.create({ ...form, company_code: officer.company_code, site_name: site?.name || "", version: "1.0", status: "active", acknowledgments: [] });
     setShowCreate(false);
     loadData(officer);
   };
 
   const deleteSOP = async (sop) => {
     if (!window.confirm(`Delete SOP "${SOPS.title}"?`)) return;
-    await SOPS.delete(SOPS.id);
+    await SOPsEntity.delete(SOPS.id);
     if (selected?.id === SOPS.id) setSelected(null);
     loadData(officer);
   };
