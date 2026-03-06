@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Shift, Message } from "@/api/supabaseClient";
+import { Shifts, Messages } from "@/api/supabaseClient";
 import { Plus, X, ChevronDown, ChevronUp, Trash2 } from "lucide-react";
 import { format, eachDayOfInterval, parseISO } from "date-fns";
 
@@ -236,7 +236,7 @@ export default function EventScheduleBuilder({ event, officers, companyCode, onS
       for (const [key, slots] of Object.entries(dayPlan)) {
         for (const slot of slots) {
           for (let q = 0; q < (slot.quantity || 1); q++) {
-            promises.push(Shift.create({
+            promises.push(Shifts.create({
               company_code: companyCode,
               site_id: event.site_id,
               site_name: event.site_name,
@@ -264,7 +264,7 @@ export default function EventScheduleBuilder({ event, officers, companyCode, onS
     const officerNames = allOfficerIds.map(id => officers.find(o => o.id === id)?.full_name || id).join(", ");
 
     if (officerNames) {
-      promises.push(Message.create({
+      promises.push(Messages.create({
         company_code: companyCode,
         sender_id: "system",
         sender_name: "SecureOps",
