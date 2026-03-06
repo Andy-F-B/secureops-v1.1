@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { TrainingModule, uploadFile, getSignedUrl } from "@/api/supabaseClient";
+import { TrainingModules, uploadFile, getSignedUrl } from "@/api/supabaseClient";
 import { Plus, Video, FileText, Brain, BookOpen, Upload, X, Play, Trash2 } from "lucide-react";
 import { createPageUrl } from "@/utils";
 
@@ -25,7 +25,7 @@ export default function Training() {
   }, []);
 
   const loadModules = async (o) => {
-    const mods = await TrainingModule.list({ company_code: o.company_code });
+    const mods = await TrainingModules.list({ company_code: o.company_code });
     setModules(mods);
   };
 
@@ -46,9 +46,9 @@ export default function Training() {
   const handleSave = async () => {
     setSaving(true);
     if (selected) {
-      await TrainingModule.update(selected.id, form);
+      await TrainingModules.update(selected.id, form);
     } else {
-      await TrainingModule.create({ ...form, company_code: officer.company_code, order: modules.length + 1 });
+      await TrainingModules.create({ ...form, company_code: officer.company_code, order: modules.length + 1 });
     }
     setSaving(false);
     setShowCreate(false);
@@ -58,7 +58,7 @@ export default function Training() {
   };
 
   const handleDelete = async (mod) => {
-    await TrainingModule.delete(mod.id);
+    await TrainingModules.delete(mod.id);
     loadModules(officer);
   };
 

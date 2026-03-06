@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Shift, Site, Officer } from "@/api/supabaseClient";
+import { Shifts, Sites, Officers as OfficersEntity } from "@/api/supabaseClient";
 import { ChevronLeft, ChevronRight, Plus, X, Calendar } from "lucide-react";
 import { format, startOfMonth, endOfMonth, startOfWeek, addDays, isSameDay, isSameMonth, parseISO } from "date-fns";
 
@@ -28,9 +28,9 @@ export default function Schedule() {
     setLoading(true);
     const cc = o.company_code;
     const [s, si, of] = await Promise.all([
-      Shift.list({ filters: { company_code: cc } }),
-      Site.list({ filters: { status: "active", company_code: cc } }),
-      Officer.list({ filters: { status: "active", company_code: cc } }),
+      Shifts.list({ filters: { company_code: cc } }),
+      Sites.list({ filters: { status: "active", company_code: cc } }),
+      OfficersEntity.list({ filters: { status: "active", company_code: cc } }),
     ]);
     const isAdmin = o.role === "admin" || o.role === "supervisor";
     setShifts(isAdmin ? s : s.filter(sh => sh.assigned_officers?.includes(o.id)));
@@ -65,9 +65,9 @@ export default function Schedule() {
     const site = sites.find(s => s.id === form.site_id);
     const data = { ...form, site_name: site?.name || form.site_name, company_code: officer?.company_code };
     if (selectedShift) {
-      await Shift.update(selectedShift.id, data);
+      await Shifts.update(selectedShifts.id, data);
     } else {
-      await Shift.create(data);
+      await Shifts.create(data);
     }
     setShowModal(false);
     loadData(officer);
@@ -75,7 +75,7 @@ export default function Schedule() {
 
   const handleDelete = async () => {
     if (selectedShift) {
-      await Shift.delete(selectedShift.id);
+      await Shifts.delete(selectedShifts.id);
       setShowModal(false);
       loadData(officer);
     }
@@ -175,7 +175,7 @@ export default function Schedule() {
                 <label className="text-gray-400 text-sm block mb-1">Site</label>
                 <select value={form.site_id} onChange={e => setForm(f => ({ ...f, site_id: e.target.value }))}
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white">
-                  <option value="">Select site...</option>
+                  <option value="">Select Sites...</option>
                   {sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
               </div>

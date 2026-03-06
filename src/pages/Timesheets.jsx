@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { ClockRecord, Officer, Site, AuditLog } from "@/api/supabaseClient";
+import { ClockRecords, Officers as OfficersEntity, Sites, AuditLog } from "@/api/supabaseClient";
 import { Edit2, Check, X, Download } from "lucide-react";
 import { format } from "date-fns";
 
@@ -26,9 +26,9 @@ export default function Timesheets() {
     setLoading(true);
     const cc = o?.company_code;
     const [cr, of, si] = await Promise.all([
-      ClockRecord.list({ company_code: cc }),
-      Officer.list({ status: "active", company_code: cc }),
-      Site.list({ company_code: cc }),
+      ClockRecords.list({ company_code: cc }),
+      OfficersEntity.list({ status: "active", company_code: cc }),
+      Sites.list({ company_code: cc }),
     ]);
     setRecords(cr);
     setOfficers(of);
@@ -52,12 +52,12 @@ export default function Timesheets() {
     const total_hours = outT ? Math.round((outT - inT) / 36000) / 100 : r.total_hours;
 
     const updated = { ...editForm, total_hours, clock_in_time: inT.toISOString(), clock_out_time: outT?.toISOString() };
-    await ClockRecord.update(r.id, updated);
+    await ClockRecords.update(r.id, updated);
 
     await AuditLog.create({
-      company_code: officer.company_code,
+      company_code: OfficersEntity.company_code,
       entity_type: "ClockRecord", entity_id: r.id, action: "update",
-      changed_by: officer.id, changed_by_name: officer.full_name,
+      changed_by: OfficersEntity.id, changed_by_name: OfficersEntity.full_name,
       changes: JSON.stringify({ before: { clock_in_time: r.clock_in_time, clock_out_time: r.clock_out_time }, after: editForm }),
       timestamp: new Date().toISOString(),
     });
@@ -67,11 +67,11 @@ export default function Timesheets() {
   };
 
   const approveRecord = async (r) => {
-    await ClockRecord.update(r.id, { status: "approved", approved_by: officer.full_name, approved_at: new Date().toISOString() });
+    await ClockRecords.update(r.id, { status: "approved", approved_by: OfficersEntity.full_name, approved_at: new Date().toISOString() });
     await AuditLog.create({
-      company_code: officer.company_code,
+      company_code: OfficersEntity.company_code,
       entity_type: "ClockRecord", entity_id: r.id, action: "approve",
-      changed_by: officer.id, changed_by_name: officer.full_name,
+      changed_by: OfficersEntity.id, changed_by_name: OfficersEntity.full_name,
       changes: JSON.stringify({ status: "approved" }),
       timestamp: new Date().toISOString(),
     });

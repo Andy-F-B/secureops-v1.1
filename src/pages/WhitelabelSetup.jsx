@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { WhitelabelConfig, Officer, Candidate, Site, uploadFile, getSignedUrl } from "@/api/supabaseClient";
+import { WhitelabelConfig, Officers as OfficersEntity, Candidates, Sites, uploadFile, getSignedUrl } from "@/api/supabaseClient";
 import { createPageUrl } from "@/utils";
 import { Shield, ChevronRight, ChevronLeft, Check, Plus, X, Palette, Upload, Image } from "lucide-react";
 
@@ -139,9 +139,9 @@ export default function WhitelabelSetup() {
     });
 
     // Create default admin officer (ADMIN001 / 1234) if not already exists
-    const existingAdmin = await Officer.list({ employee_id: "ADMIN001", company_code: code_upper });
+    const existingAdmin = await Officers.list({ employee_id: "ADMIN001", company_code: code_upper });
     if (existingAdmin.length === 0) {
-      await Officer.create({
+      await Officers.create({
         employee_id: "ADMIN001",
         full_name: "Admin",
         pin: "1234",
@@ -152,9 +152,9 @@ export default function WhitelabelSetup() {
     }
 
     // Create default candidate (CAND001 / 1234) if not already exists
-    const existingCand = await Candidate.list({ candidate_id: "CAND001", company_code: code_upper });
+    const existingCand = await Candidates.list({ candidate_id: "CAND001", company_code: code_upper });
     if (existingCand.length === 0) {
-      await Candidate.create({
+      await Candidates.create({
         candidate_id: "CAND001",
         full_name: "Candidate",
         pin: "1234",
@@ -169,9 +169,9 @@ export default function WhitelabelSetup() {
     const namedAdmins = admins.filter(a => a.name);
     for (const a of namedAdmins) {
       const id = a.employee_id || `ADMIN${String(namedAdmins.indexOf(a) + 2).padStart(3, "0")}`;
-      const exists = await Officer.list({ employee_id: id, company_code: code_upper });
+      const exists = await Officers.list({ employee_id: id, company_code: code_upper });
       if (exists.length === 0) {
-        await Officer.create({
+        await Officers.create({
           employee_id: id,
           full_name: a.name,
           pin: a.pin || "1234",
@@ -187,9 +187,9 @@ export default function WhitelabelSetup() {
     for (let i = 0; i < namedOfficers.length; i++) {
       const o = namedOfficers[i];
       const id = o.employee_id || `OFF${String(i + 1).padStart(3, "0")}`;
-      const exists = await Officer.list({ employee_id: id, company_code: code_upper });
+      const exists = await Officers.list({ employee_id: id, company_code: code_upper });
       if (exists.length === 0) {
-        await Officer.create({
+        await Officers.create({
           employee_id: id,
           full_name: o.name,
           pin: o.pin || "1234",
@@ -203,7 +203,7 @@ export default function WhitelabelSetup() {
     // Create pre-loaded sites
     const namedSites = sites.filter(s => s.name);
     for (const s of namedSites) {
-      await Site.create({
+      await Sites.create({
         name: s.name,
         address: s.address || "",
         company_code: code_upper,

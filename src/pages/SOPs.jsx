@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { SOP, Site } from "@/api/supabaseClient";
+import { SOPs, Sites } from "@/api/supabaseClient";
 import { FileText, Plus, X, CheckSquare, Trash2 } from "lucide-react";
 
 export default function SOPs() {
@@ -24,39 +24,39 @@ export default function SOPs() {
     setLoading(true);
     const isAdmin = o.role === "admin" || o.role === "supervisor";
     const [s, si] = await Promise.all([
-      SOP.list({ status: "active" }),
-      Site.list({ status: "active" }),
+      SOPS.list({ status: "active" }),
+      Sites.list({ status: "active" }),
     ]);
-    setSops(isAdmin ? s : s.filter(sop => o.assigned_sites?.includes(sop.site_id)));
+    setSops(isAdmin ? s : s.filter(sop => o.assigned_sites?.includes(SOPS.site_id)));
     setSites(si);
     setLoading(false);
   };
 
   const acknowledge = async (sop) => {
-    const acks = sop.acknowledgments || [];
-    const alreadyAcked = acks.some(a => a.officer_id === officer.id && a.version === sop.version);
+    const acks = SOPS.acknowledgments || [];
+    const alreadyAcked = acks.some(a => a.officer_id === officer.id && a.version === SOPS.version);
     if (alreadyAcked) return;
-    const updated = [...acks, { officer_id: officer.id, officer_name: officer.full_name, acknowledged_at: new Date().toISOString(), version: sop.version }];
-    await SOP.update(sop.id, { acknowledgments: updated });
+    const updated = [...acks, { officer_id: officer.id, officer_name: officer.full_name, acknowledged_at: new Date().toISOString(), version: SOPS.version }];
+    await SOPS.update(SOPS.id, { acknowledgments: updated });
     loadData(officer);
     setSelected({ ...sop, acknowledgments: updated });
   };
 
   const handleCreate = async () => {
     const site = sites.find(s => s.id === form.site_id);
-    await SOP.create({ ...form, company_code: officer.company_code, site_name: site?.name || "", version: "1.0", status: "active", acknowledgments: [] });
+    await SOPS.create({ ...form, company_code: officer.company_code, site_name: site?.name || "", version: "1.0", status: "active", acknowledgments: [] });
     setShowCreate(false);
     loadData(officer);
   };
 
   const deleteSOP = async (sop) => {
-    if (!window.confirm(`Delete SOP "${sop.title}"?`)) return;
-    await SOP.delete(sop.id);
-    if (selected?.id === sop.id) setSelected(null);
+    if (!window.confirm(`Delete SOP "${SOPS.title}"?`)) return;
+    await SOPS.delete(SOPS.id);
+    if (selected?.id === SOPS.id) setSelected(null);
     loadData(officer);
   };
 
-  const isAcknowledged = (sop) => sop.acknowledgments?.some(a => a.officer_id === officer?.id);
+  const isAcknowledged = (sop) => SOPS.acknowledgments?.some(a => a.officer_id === officer?.id);
   const isAdmin = officer?.role === "admin" || officer?.role === "supervisor";
 
   if (loading) return <div className="flex items-center justify-center h-64"><p className="text-gray-400">Loading SOPs...</p></div>;
@@ -97,7 +97,7 @@ export default function SOPs() {
             </a>
           )}
           <div className="bg-gray-800 rounded-xl p-4 text-gray-300 whitespace-pre-wrap text-sm min-h-[200px]">
-            {selected.content || "No content provided for this SOP."}
+            {selected.content || "No content provided for this SOPS."}
           </div>
           {isAdmin && (
             <div className="mt-4">
@@ -116,7 +116,7 @@ export default function SOPs() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {sops.map(sop => (
-            <div key={sop.id} className="bg-gray-900 border border-gray-800 rounded-2xl p-5 hover:border-blue-700 transition-colors">
+            <div key={SOPS.id} className="bg-gray-900 border border-gray-800 rounded-2xl p-5 hover:border-blue-700 transition-colors">
               <div className="flex items-start justify-between mb-3">
                 <FileText className="w-5 h-5 text-blue-400 cursor-pointer" onClick={() => setSelected(sop)} />
                 <div className="flex items-center gap-2">
@@ -129,9 +129,9 @@ export default function SOPs() {
                 </div>
               </div>
               <div onClick={() => setSelected(sop)} className="cursor-pointer">
-                <h3 className="text-white font-semibold">{sop.title}</h3>
-                <p className="text-gray-400 text-sm mt-1">{sop.site_name}</p>
-                <p className="text-gray-600 text-xs mt-2">v{sop.version} • {sop.acknowledgments?.length || 0} acknowledgments</p>
+                <h3 className="text-white font-semibold">{SOPS.title}</h3>
+                <p className="text-gray-400 text-sm mt-1">{SOPS.site_name}</p>
+                <p className="text-gray-600 text-xs mt-2">v{SOPS.version} • {SOPS.acknowledgments?.length || 0} acknowledgments</p>
               </div>
             </div>
           ))}
@@ -155,7 +155,7 @@ export default function SOPs() {
                 <label className="text-gray-400 text-sm block mb-1">Site</label>
                 <select value={form.site_id || ""} onChange={e => setForm(f => ({ ...f, site_id: e.target.value }))}
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white">
-                  <option value="">Select site...</option>
+                  <option value="">Select Sites...</option>
                   {sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
               </div>

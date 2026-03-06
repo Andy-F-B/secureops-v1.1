@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { ClockRecord, Officer, Candidate, Shift } from "@/api/supabaseClient";
+import { ClockRecords, Officers as OfficersEntity, Candidates, Shifts } from "@/api/supabaseClient";
 import { X, Star, MapPin, Shield, Clock, Users, TrendingUp, UserCheck, UserX, CheckCircle, Mail, Globe, Calendar } from "lucide-react";
 import { computeScore } from "../../pages/Discover";
 
@@ -16,10 +16,10 @@ export default function CompanyProfileModal({ company, onClose }) {
 
     const loadAnalytics = async () => {
       const [clocks, officers, candidates, shifts] = await Promise.all([
-        ClockRecord.list({ company_code: company.company_code }),
-        Officer.list({ company_code: company.company_code, status: "active" }),
-        Candidate.list({ company_code: company.company_code }),
-        Shift.list({ company_code: company.company_code }),
+        ClockRecords.list({ company_code: company.company_code }),
+        OfficersEntity.list({ company_code: company.company_code, status: "active" }),
+        Candidates.list({ company_code: company.company_code }),
+        Shifts.list({ company_code: company.company_code }),
       ]);
 
       const completed = clocks.filter(r => ["clocked_out", "approved"].includes(r.status));
