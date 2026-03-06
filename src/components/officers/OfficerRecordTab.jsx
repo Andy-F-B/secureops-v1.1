@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { OfficerRecord, Officer, uploadFile, getSignedUrl } from "@/api/supabaseClient";
+import { OfficerRecords, Officers, uploadFile, getSignedUrl } from "@/api/supabaseClient";
 import { Plus, X, FileText, Upload, Loader2 } from "lucide-react";
 
 const RECORD_TYPES = [
@@ -26,7 +26,7 @@ export default function OfficerRecordTab({ officerId, officerName, companyCode, 
 
   const loadRecords = async () => {
     setLoading(true);
-    const r = await OfficerRecord.list({ officer_id: officerId });
+    const r = await OfficerRecords.list({ officer_id: officerId });
     setRecords(r);
     setLoading(false);
   };
@@ -47,7 +47,7 @@ export default function OfficerRecordTab({ officerId, officerName, companyCode, 
 
   const handleSave = async () => {
     setSaving(true);
-    await OfficerRecord.create({
+    await OfficerRecords.create({
       ...form,
       officer_id: officerId,
       officer_name: officerName,
@@ -56,7 +56,7 @@ export default function OfficerRecordTab({ officerId, officerName, companyCode, 
     });
 
     if (form.type === "termination") {
-      await Officer.update(officerId, { status: "inactive" });
+      await Officers.update(officerId, { status: "inactive" });
       onTerminate && onTerminate();
     }
 
