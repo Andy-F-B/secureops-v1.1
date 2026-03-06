@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { Candidates, OnboardingRecords, OfficerRecords, ClockRecords, Messages, Officers as OfficersEntity, Certifications } from "@/api/supabaseClient";
 import { Users, CheckCircle, XCircle, Clock, ClipboardList, FileText, ChevronDown, ChevronUp, Brain, Video, AlertTriangle, X, UserPlus, Trash2, Plus, MessageSquare, Send } from "lucide-react";
 import { createPageUrl } from "@/utils";
 
@@ -56,19 +56,21 @@ export default function HRDashboard() {
     const stored = sessionStorage.getItem("secureops_officer");
     const me = stored ? JSON.parse(stored) : null;
     const cc = me?.company_code;
+
     const [cands, recs, orecs, ts, allMsgs] = await Promise.all([
-      cc ? base44.entities.Candidate.filter({ company_code: cc }, "-created_date", 100) : base44.entities.Candidate.list("-created_date", 100),
-      base44.entities.OnboardingRecord.list("-created_date", 100),
-      base44.entities.OfficerRecord.list("-created_date", 50),
-      cc ? base44.entities.ClockRecord.filter({ company_code: cc }, "-created_date", 100) : base44.entities.ClockRecord.list("-created_date", 100),
-      cc ? base44.entities.Message.filter({ channel: "direct", company_code: cc }, "-created_date", 500) : base44.entities.Message.filter({ channel: "direct" }, "-created_date", 500),
+      Candidates.list({ company_code: cc }),
+      OnboardingRecords.list({ company_code: cc }),
+      OfficerRecords.list({ company_code: cc }),
+      ClockRecords.list({ company_code: cc }),
+      Messages.list({ channel: "direct", company_code: cc }),
     ]);
+
     setCandidates(cands);
     setRecords(recs);
     setOfficerRecords(orecs);
     setTimesheets(ts);
 
-    // Compute unread per candidate (messages from candidate not read by this officer)
+    // Compute unread per candidate
     const unread = {};
     for (const cand of cands) {
       const key = `cand_${cand.id}`;
@@ -83,15 +85,13 @@ export default function HRDashboard() {
 
   const openApproveModal = async (cand) => {
     const rec = getRecord(cand.id);
-    // Find next employee ID
-    const allOfficers = await base44.entities.Officer.list("employee_id", 500);
+    const allOfficers = await OfficersEntity.list({ company_code: officer?.company_code });
     const nums = allOfficers
       .map(o => parseInt((o.employee_id || "").replace(/\D/g, ""), 10))
       .filter(n => !isNaN(n));
     const nextNum = nums.length > 0 ? Math.max(...nums) + 1 : 1;
     const nextId = `OFF${String(nextNum).padStart(3, "0")}`;
 
-    // Detect license docs from onboarding
     const docs = rec?.documents_uploaded || [];
     const licenseDoc = docs.find(d => d.type === "guard_card" || d.label?.toLowerCase().includes("guard") || d.label?.toLowerCase().includes("license"));
 
@@ -118,26 +118,24 @@ export default function HRDashboard() {
 
   const confirmApprove = async () => {
     setSaving(true);
-    const { cand, rec } = approveModal;
+    const { cand } = approveModal;
     const { _licenseDoc, _guardCardNumber, _hasGuardCard, ...officerData } = approveForm;
 
-    // Create officer (preserve company_code)
-    const newOfficer = await base44.entities.Officer.create({ ...officerData, company_code: officer?.company_code });
+    const newOfficer = await OfficersEntity.create({ ...officerData, company_code: officer?.company_code });
 
-    // If guard card info, create certification
     if (_hasGuardCard || _guardCardNumber || _licenseDoc) {
-      await base44.entities.Certification.create({
+      await Certifications.create({
         officer_id: newOfficer.id,
         officer_name: officerData.full_name,
         type: "guard_license",
         title: "Guard Card",
-        ..._licenseDoc ? { file_url: _licenseDoc.file_url } : {},
+        ...(_licenseDoc ? { file_url: _licenseDoc.file_url } : {}),
         status: "approved",
+        company_code: officer?.company_code,
       });
     }
 
-    // Mark candidate approved
-    await base44.entities.Candidate.update(cand.id, {
+    await Candidates.update(cand.id, {
       onboarding_status: "approved",
       approved_by: officer.full_name,
     });
@@ -147,12 +145,8 @@ export default function HRDashboard() {
     await loadAll();
   };
 
-  const approveCandidate = async (cand) => {
-    openApproveModal(cand);
-  };
-
   const openCreateCandidate = async () => {
-    const allCands = await base44.entities.Candidate.list("candidate_id", 500);
+    const allCands = await Candidates.list({ company_code: officer?.company_code });
     const nums = allCands
       .map(c => parseInt((c.candidate_id || "").replace(/\D/g, ""), 10))
       .filter(n => !isNaN(n));
@@ -167,7 +161,7 @@ export default function HRDashboard() {
     setCreatingCand(true);
     const stored = sessionStorage.getItem("secureops_officer");
     const me = stored ? JSON.parse(stored) : null;
-    await base44.entities.Candidate.create({ ...createCandForm, company_code: me?.company_code });
+    await Candidates.create({ ...createCandForm, company_code: me?.company_code });
     setShowCreateCand(false);
     setCreatingCand(false);
     loadAll();
@@ -175,15 +169,14 @@ export default function HRDashboard() {
 
   const openChat = async (cand) => {
     setChatCand(cand);
-    const msgs = await base44.entities.Message.filter({ site_id: `cand_${cand.id}`, channel: "direct" }, "created_date", 100);
+    const msgs = await Messages.list({ site_id: `cand_${cand.id}`, channel: "direct" });
     setChatMessages(msgs);
-    // Mark as read
     setUnreadCounts(prev => ({ ...prev, [cand.id]: 0 }));
   };
 
   const sendChatMessage = async () => {
     if (!chatInput.trim()) return;
-    await base44.entities.Message.create({
+    await Messages.create({
       sender_id: officer.id,
       sender_name: officer.full_name,
       recipient_id: chatCand.id,
@@ -191,19 +184,35 @@ export default function HRDashboard() {
       channel: "direct",
       content: chatInput.trim(),
       read_by: [officer.id],
+      company_code: officer?.company_code,
     });
     setChatInput("");
-    const msgs = await base44.entities.Message.filter({ site_id: `cand_${chatCand.id}`, channel: "direct" }, "created_date", 100);
+    const msgs = await Messages.list({ site_id: `cand_${chatCand.id}`, channel: "direct" });
     setChatMessages(msgs);
   };
 
   const denyCandidate = async (cand) => {
     const reason = denyReason[cand.id] || "";
     setProcessingId(cand.id);
-    await base44.entities.Candidate.update(cand.id, { onboarding_status: "denied", denial_reason: reason });
+    await Candidates.update(cand.id, { onboarding_status: "denied", denial_reason: reason });
     await loadAll();
     setProcessingId(null);
     setDenyReason(d => ({ ...d, [cand.id]: "" }));
+  };
+
+  const deleteCandidate = async (e, cand) => {
+    e.stopPropagation();
+    if (!window.confirm(`Delete candidate "${cand.full_name}"?`)) return;
+    await Candidates.delete(cand.id);
+    const rec = getRecord(cand.id);
+    if (rec) await OnboardingRecords.delete(rec.id);
+    loadAll();
+  };
+
+  const deleteOfficerRecord = async (r) => {
+    if (!window.confirm("Delete this record?")) return;
+    await OfficerRecords.delete(r.id);
+    loadAll();
   };
 
   if (loading) return <div className="text-gray-400 py-10 text-center">Loading HR Dashboard...</div>;
@@ -274,13 +283,7 @@ export default function HRDashboard() {
                       )}
                     </button>
                     {officer?.role === "admin" && (
-                      <button onClick={async (e) => {
-                        e.stopPropagation();
-                        if (!window.confirm(`Delete candidate "${cand.full_name}"?`)) return;
-                        await base44.entities.Candidate.delete(cand.id);
-                        if (rec) await base44.entities.OnboardingRecord.delete(rec.id);
-                        loadAll();
-                      }} className="text-red-500 hover:text-red-400">
+                      <button onClick={(e) => deleteCandidate(e, cand)} className="text-red-500 hover:text-red-400">
                         <Trash2 className="w-4 h-4" />
                       </button>
                     )}
@@ -290,7 +293,6 @@ export default function HRDashboard() {
 
                 {isExpanded && rec && (
                   <div className="border-t border-gray-800 p-5 space-y-5">
-                    {/* Progress overview */}
                     <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                       {[
                         { label: "Intro Video", value: rec.intro_video_status, icon: Video, done: rec.intro_video_status === "complete" },
@@ -307,7 +309,6 @@ export default function HRDashboard() {
                       ))}
                     </div>
 
-                    {/* Questionnaire answers */}
                     {rec.questionnaire_answers && Object.keys(rec.questionnaire_answers).length > 0 && (
                       <div>
                         <p className="text-gray-400 text-xs font-semibold uppercase mb-2">Questionnaire Answers</p>
@@ -322,7 +323,6 @@ export default function HRDashboard() {
                       </div>
                     )}
 
-                    {/* Mock test results */}
                     {rec.mock_test_results && (
                       <div>
                         <p className="text-gray-400 text-xs font-semibold uppercase mb-2">Assessment Results</p>
@@ -338,7 +338,6 @@ export default function HRDashboard() {
                       </div>
                     )}
 
-                    {/* Uploaded documents */}
                     {(rec.documents_uploaded || []).length > 0 && (
                       <div>
                         <p className="text-gray-400 text-xs font-semibold uppercase mb-2">Uploaded Documents</p>
@@ -353,7 +352,6 @@ export default function HRDashboard() {
                       </div>
                     )}
 
-                    {/* Approval actions */}
                     {!["approved", "denied"].includes(cand.onboarding_status) && (
                       <div className="space-y-3 pt-2 border-t border-gray-800">
                         <div className="flex flex-col sm:flex-row gap-3">
@@ -410,11 +408,9 @@ export default function HRDashboard() {
                     "bg-yellow-900/40 text-yellow-400"
                   }`}>{r.type?.replace(/_/g, " ")}</span>
                   {officer?.role === "admin" && (
-                    <button onClick={async () => {
-                      if (!window.confirm("Delete this record?")) return;
-                      await base44.entities.OfficerRecord.delete(r.id);
-                      loadAll();
-                    }} className="text-red-500 hover:text-red-400"><Trash2 className="w-4 h-4" /></button>
+                    <button onClick={() => deleteOfficerRecord(r)} className="text-red-500 hover:text-red-400">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   )}
                 </div>
               </div>
@@ -595,9 +591,11 @@ export default function HRDashboard() {
                     <td className="px-5 py-3 text-right text-gray-500 text-xs">{r.clock_in_time ? new Date(r.clock_in_time).toLocaleString() : "—"}</td>
                     <td className="px-5 py-3 text-right">{r.total_hours?.toFixed(2) || "—"}</td>
                     <td className="px-5 py-3 text-right">
-                      <span className={`text-xs px-2 py-0.5 rounded-full ${r.status === "approved" ? "bg-green-900/40 text-green-400" : r.status === "clocked_in" ? "bg-blue-900/40 text-blue-400" : "bg-gray-700 text-gray-400"}`}>
-                        {r.status}
-                      </span>
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${
+                        r.status === "approved" ? "bg-green-900/40 text-green-400" :
+                        r.status === "clocked_in" ? "bg-blue-900/40 text-blue-400" :
+                        "bg-gray-700 text-gray-400"
+                      }`}>{r.status}</span>
                     </td>
                   </tr>
                 ))}

@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
-import { Search, Edit2, Check, X, Download, Filter } from "lucide-react";
-import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from "date-fns";
+import { ClockRecord, Officer, Site, AuditLog } from "@/api/supabaseClient";
+import { Edit2, Check, X, Download } from "lucide-react";
+import { format } from "date-fns";
 
 export default function Timesheets() {
   const [officer, setOfficer] = useState(null);
@@ -26,9 +26,9 @@ export default function Timesheets() {
     setLoading(true);
     const cc = o?.company_code;
     const [cr, of, si] = await Promise.all([
-      cc ? base44.entities.ClockRecord.filter({ company_code: cc }, "-clock_in_time", 200) : base44.entities.ClockRecord.list("-clock_in_time", 200),
-      cc ? base44.entities.Officer.filter({ status: "active", company_code: cc }, "full_name") : base44.entities.Officer.filter({ status: "active" }, "full_name"),
-      cc ? base44.entities.Site.filter({ company_code: cc }, "name") : base44.entities.Site.list("name"),
+      ClockRecord.list({ company_code: cc }),
+      Officer.list({ status: "active", company_code: cc }),
+      Site.list({ company_code: cc }),
     ]);
     setRecords(cr);
     setOfficers(of);
@@ -52,10 +52,10 @@ export default function Timesheets() {
     const total_hours = outT ? Math.round((outT - inT) / 36000) / 100 : r.total_hours;
 
     const updated = { ...editForm, total_hours, clock_in_time: inT.toISOString(), clock_out_time: outT?.toISOString() };
-    await base44.entities.ClockRecord.update(r.id, updated);
+    await ClockRecord.update(r.id, updated);
 
-    // Audit
-    await base44.entities.AuditLog.create({
+    await AuditLog.create({
+      company_code: officer.company_code,
       entity_type: "ClockRecord", entity_id: r.id, action: "update",
       changed_by: officer.id, changed_by_name: officer.full_name,
       changes: JSON.stringify({ before: { clock_in_time: r.clock_in_time, clock_out_time: r.clock_out_time }, after: editForm }),
@@ -67,8 +67,9 @@ export default function Timesheets() {
   };
 
   const approveRecord = async (r) => {
-    await base44.entities.ClockRecord.update(r.id, { status: "approved", approved_by: officer.full_name, approved_at: new Date().toISOString() });
-    await base44.entities.AuditLog.create({
+    await ClockRecord.update(r.id, { status: "approved", approved_by: officer.full_name, approved_at: new Date().toISOString() });
+    await AuditLog.create({
+      company_code: officer.company_code,
       entity_type: "ClockRecord", entity_id: r.id, action: "approve",
       changed_by: officer.id, changed_by_name: officer.full_name,
       changes: JSON.stringify({ status: "approved" }),

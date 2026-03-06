@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from "react";
-import { base44 } from "@/api/base44Client";
-import { Plus, Video, FileText, Brain, BookOpen, Upload, X, Play, CheckCircle, Trash2 } from "lucide-react";
+import { useState, useEffect } from "react";
+import { TrainingModule, uploadFile, getSignedUrl } from "@/api/supabaseClient";
+import { Plus, Video, FileText, Brain, BookOpen, Upload, X, Play, Trash2 } from "lucide-react";
 import { createPageUrl } from "@/utils";
 
 const TYPE_ICONS = { video: Video, document: FileText, quiz: Brain, article: BookOpen };
@@ -21,38 +21,45 @@ export default function Training() {
     const o = JSON.parse(stored);
     setOfficer(o);
     if (!["admin", "hr"].includes(o.role)) { window.location.href = createPageUrl("Dashboard"); return; }
-    loadModules();
+    loadModules(o);
   }, []);
 
-  const loadModules = async () => {
-    const mods = await base44.entities.TrainingModule.list("order", 100);
+  const loadModules = async (o) => {
+    const mods = await TrainingModule.list({ company_code: o.company_code });
     setModules(mods);
   };
 
   const handleFileUpload = async (file) => {
     setUploading(true);
-    const { file_url } = await base44.integrations.Core.UploadFile({ file });
-    setForm(f => ({ ...f, content_url: file_url }));
+    const ext = file.name.split(".").pop();
+    const path = `${officer.company_code}/${Date.now()}.${ext}`;
+    const storagePath = await uploadFile("sop-files", file, path);
+    setForm(f => ({ ...f, content_path: storagePath }));
     setUploading(false);
+  };
+
+  const handleViewContent = async (path) => {
+    const url = await getSignedUrl("sop-files", path);
+    window.open(url, "_blank");
   };
 
   const handleSave = async () => {
     setSaving(true);
     if (selected) {
-      await base44.entities.TrainingModule.update(selected.id, form);
+      await TrainingModule.update(selected.id, form);
     } else {
-      await base44.entities.TrainingModule.create({ ...form, order: modules.length + 1 });
+      await TrainingModule.create({ ...form, company_code: officer.company_code, order: modules.length + 1 });
     }
     setSaving(false);
     setShowCreate(false);
     setSelected(null);
     setForm({ title: "", description: "", type: "video", is_required: true, visible_to: ["admin", "hr"], status: "active" });
-    loadModules();
+    loadModules(officer);
   };
 
   const handleDelete = async (mod) => {
-    await base44.entities.TrainingModule.delete(mod.id);
-    loadModules();
+    await TrainingModule.delete(mod.id);
+    loadModules(officer);
   };
 
   const openEdit = (mod) => {
@@ -108,11 +115,11 @@ export default function Training() {
                   <span key={role} className="text-xs text-gray-500 bg-gray-800 px-2 py-0.5 rounded">{role}</span>
                 ))}
               </div>
-              {mod.content_url && (
-                <a href={mod.content_url} target="_blank" rel="noopener noreferrer"
+              {mod.content_path && (
+                <button onClick={() => handleViewContent(mod.content_path)}
                   className="mt-3 flex items-center gap-1.5 text-xs text-blue-400 hover:underline">
                   <Play className="w-3 h-3" /> View Content
-                </a>
+                </button>
               )}
             </div>
           );
@@ -170,7 +177,7 @@ export default function Training() {
                 <label className="text-gray-400 text-sm block mb-2">Upload File {form.type === "video" ? "(MP4, MOV)" : "(PDF, DOC)"}</label>
                 <label className="flex items-center gap-2 cursor-pointer border border-dashed border-gray-600 rounded-lg p-4 hover:border-blue-500 transition-colors">
                   <Upload className="w-4 h-4 text-gray-500" />
-                  <span className="text-gray-400 text-sm">{uploading ? "Uploading..." : form.content_url ? "File uploaded ✓ — Replace?" : "Click to upload"}</span>
+                  <span className="text-gray-400 text-sm">{uploading ? "Uploading..." : form.content_path ? "File uploaded ✓ — Replace?" : "Click to upload"}</span>
                   <input type="file" className="hidden" disabled={uploading}
                     accept={form.type === "video" ? "video/*" : ".pdf,.doc,.docx,.jpg,.png"}
                     onChange={e => e.target.files[0] && handleFileUpload(e.target.files[0])} />

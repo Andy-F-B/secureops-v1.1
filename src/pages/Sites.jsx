@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { Sites as SitesEntity, Officers as OfficersEntity } from "@/api/supabaseClient";
 import { Plus, MapPin, X, Edit, Trash2 } from "lucide-react";
 
 export default function Sites() {
@@ -24,25 +24,45 @@ export default function Sites() {
     setLoading(true);
     const cc = o?.company_code;
     const [s, supervisors] = await Promise.all([
-      cc ? base44.entities.Site.filter({ company_code: cc }, "name", 100) : base44.entities.Site.list("name", 100),
-      cc ? base44.entities.Officer.filter({ company_code: cc }, "full_name", 200) : base44.entities.Officer.filter({}, "full_name", 200),
+      cc ? SitesEntity.list({ company_code: cc }) : SitesEntity.list(),
+      cc ? OfficersEntity.list({ company_code: cc }) : OfficersEntity.list(),
     ]);
     setSites(s);
     setOfficers(supervisors.filter(o => ["supervisor", "admin"].includes(o.role)));
     setLoading(false);
   };
 
-  const openCreate = () => { setSelected(null); setForm({ status: "active", company_code: _officer?.company_code }); setShowModal(true); };
-  const openEdit = (s) => { setSelected(s); setForm({ ...s }); setShowModal(true); };
+  const openCreate = () => {
+    setSelected(null);
+    setForm({ status: "active", company_code: _officer?.company_code });
+    setShowModal(true);
+  };
+
+  const openEdit = (s) => {
+    setSelected(s);
+    setForm({ ...s });
+    setShowModal(true);
+  };
 
   const handleSave = async () => {
-    if (selected) await base44.entities.Site.update(selected.id, form);
-    else await base44.entities.Site.create(form);
+    if (selected) await SitesEntity.update(selected.id, form);
+    else await SitesEntity.create(form);
     setShowModal(false);
     loadData(_officer);
   };
 
-  if (loading) return <div className="flex items-center justify-center h-64"><p className="text-gray-400">Loading sites...</p></div>;
+  const handleDelete = async (e, s) => {
+    e.stopPropagation();
+    if (!window.confirm(`Delete site "${s.name}"?`)) return;
+    await SitesEntity.delete(s.id);
+    loadData(_officer);
+  };
+
+  if (loading) return (
+    <div className="flex items-center justify-center h-64">
+      <p className="text-gray-400">Loading sites...</p>
+    </div>
+  );
 
   return (
     <div className="space-y-5">
@@ -58,15 +78,16 @@ export default function Sites() {
             <div className="flex items-start justify-between mb-3">
               <MapPin className="w-5 h-5 text-blue-400" />
               <div className="flex items-center gap-2">
-                <span className={`text-xs px-2 py-1 rounded-full ${s.status === "active" ? "bg-green-900/50 text-green-400" : "bg-gray-700 text-gray-400"}`}>{s.status}</span>
-                <button onClick={(e) => { e.stopPropagation(); openEdit(s); }} className="text-gray-500 hover:text-white"><Edit className="w-4 h-4" /></button>
+                <span className={`text-xs px-2 py-1 rounded-full ${s.status === "active" ? "bg-green-900/50 text-green-400" : "bg-gray-700 text-gray-400"}`}>
+                  {s.status}
+                </span>
+                <button onClick={(e) => { e.stopPropagation(); openEdit(s); }} className="text-gray-500 hover:text-white">
+                  <Edit className="w-4 h-4" />
+                </button>
                 {_officer?.role === "admin" && (
-                  <button onClick={async (e) => {
-                    e.stopPropagation();
-                    if (!window.confirm(`Delete site "${s.name}"?`)) return;
-                    await base44.entities.Site.delete(s.id);
-                    loadData(_officer);
-                  }} className="text-red-500 hover:text-red-400"><Trash2 className="w-4 h-4" /></button>
+                  <button onClick={(e) => handleDelete(e, s)} className="text-red-500 hover:text-red-400">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 )}
               </div>
             </div>
@@ -85,25 +106,43 @@ export default function Sites() {
               <button onClick={() => setShowModal(false)}><X className="w-5 h-5 text-gray-500" /></button>
             </div>
             <div className="p-5 space-y-3">
-              {[["name", "Site Name"], ["address", "Address"], ["city", "City"], ["state", "State"], ["zip", "ZIP"], ["client_name", "Client Name"], ["client_contact", "Client Contact"], ["client_phone", "Client Phone"]].map(([key, label]) => (
+              {[
+                ["name", "Site Name"],
+                ["address", "Address"],
+                ["city", "City"],
+                ["state", "State"],
+                ["zip", "ZIP"],
+                ["client_name", "Client Name"],
+                ["client_contact", "Client Contact"],
+                ["client_phone", "Client Phone"]
+              ].map(([key, label]) => (
                 <div key={key}>
                   <label className="text-gray-400 text-sm block mb-1">{label}</label>
-                  <input value={form[key] || ""} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500" />
+                  <input
+                    value={form[key] || ""}
+                    onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
+                  />
                 </div>
               ))}
               <div>
                 <label className="text-gray-400 text-sm block mb-1">Supervisor</label>
-                <select value={form.supervisor_id || ""} onChange={e => setForm(f => ({ ...f, supervisor_id: e.target.value }))}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white">
+                <select
+                  value={form.supervisor_id || ""}
+                  onChange={e => setForm(f => ({ ...f, supervisor_id: e.target.value }))}
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white"
+                >
                   <option value="">None</option>
                   {officers.map(o => <option key={o.id} value={o.id}>{o.full_name}</option>)}
                 </select>
               </div>
               <div>
                 <label className="text-gray-400 text-sm block mb-1">Status</label>
-                <select value={form.status || "active"} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white">
+                <select
+                  value={form.status || "active"}
+                  onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white"
+                >
                   <option value="active">Active</option>
                   <option value="inactive">Inactive</option>
                 </select>

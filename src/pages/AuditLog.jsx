@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
-import { Shield, Filter } from "lucide-react";
+import { AuditLog as AuditLogEntity } from "@/api/supabaseClient";
+import { Shield } from "lucide-react";
 import { format } from "date-fns";
 
 export default function AuditLog() {
@@ -12,7 +12,7 @@ export default function AuditLog() {
 
   const loadLogs = async () => {
     setLoading(true);
-    const l = await base44.entities.AuditLog.list("-timestamp", 200);
+    const l = await AuditLogEntity.list();
     setLogs(l);
     setLoading(false);
   };
@@ -30,20 +30,34 @@ export default function AuditLog() {
     approve: "bg-purple-900/50 text-purple-400",
   };
 
-  if (loading) return <div className="flex items-center justify-center h-64"><p className="text-gray-400">Loading audit log...</p></div>;
+  if (loading) return (
+    <div className="flex items-center justify-center h-64">
+      <p className="text-gray-400">Loading audit log...</p>
+    </div>
+  );
 
   return (
     <div className="space-y-5">
       <div className="flex gap-3">
-        <select value={filter.entity} onChange={e => setFilter(f => ({ ...f, entity: e.target.value }))}
-          className="bg-gray-900 border border-gray-800 rounded-xl px-3 py-2 text-white text-sm">
+        <select
+          value={filter.entity}
+          onChange={e => setFilter(f => ({ ...f, entity: e.target.value }))}
+          className="bg-gray-900 border border-gray-800 rounded-xl px-3 py-2 text-white text-sm"
+        >
           <option value="">All Entities</option>
-          {["ClockRecord", "Shift", "Officer", "Event", "Certification", "SOP"].map(e => <option key={e} value={e}>{e}</option>)}
+          {["ClockRecord", "Shift", "Officer", "Event", "Certification", "SOP"].map(e => (
+            <option key={e} value={e}>{e}</option>
+          ))}
         </select>
-        <select value={filter.action} onChange={e => setFilter(f => ({ ...f, action: e.target.value }))}
-          className="bg-gray-900 border border-gray-800 rounded-xl px-3 py-2 text-white text-sm">
+        <select
+          value={filter.action}
+          onChange={e => setFilter(f => ({ ...f, action: e.target.value }))}
+          className="bg-gray-900 border border-gray-800 rounded-xl px-3 py-2 text-white text-sm"
+        >
           <option value="">All Actions</option>
-          {["create", "update", "delete", "approve"].map(a => <option key={a} value={a}>{a}</option>)}
+          {["create", "update", "delete", "approve"].map(a => (
+            <option key={a} value={a}>{a}</option>
+          ))}
         </select>
       </div>
 
@@ -68,7 +82,9 @@ export default function AuditLog() {
                   <td className="px-4 py-3 text-white">{log.changed_by_name}</td>
                   <td className="px-4 py-3 text-gray-400">{log.entity_type}</td>
                   <td className="px-4 py-3">
-                    <span className={`text-xs px-2 py-1 rounded-full ${actionColor[log.action] || "bg-gray-700 text-gray-400"}`}>{log.action}</span>
+                    <span className={`text-xs px-2 py-1 rounded-full ${actionColor[log.action] || "bg-gray-700 text-gray-400"}`}>
+                      {log.action}
+                    </span>
                   </td>
                   <td className="px-4 py-3 text-gray-500 text-xs max-w-xs truncate">{log.changes}</td>
                 </tr>

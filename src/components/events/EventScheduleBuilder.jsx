@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { base44 } from "@/api/base44Client";
-import { Plus, X, ChevronDown, ChevronUp, CheckCircle, XCircle, Pencil, Trash2 } from "lucide-react";
+import { Shift, Message } from "@/api/supabaseClient";
+import { Plus, X, ChevronDown, ChevronUp, Trash2 } from "lucide-react";
 import { format, eachDayOfInterval, parseISO } from "date-fns";
 
 // Preset shift types
@@ -110,7 +110,6 @@ function DayScheduleRow({ date, dayPlan, officers, onChange }) {
 
   const addCustom = () => {
     const updated = { ...dayPlan };
-    const customKeys = Object.keys(updated).filter(k => k.startsWith("custom_"));
     const newKey = `custom_${Date.now()}`;
     updated[newKey] = [makeBlankSlot("08:00", "16:00")];
     onChange(updated);
@@ -160,7 +159,7 @@ function DayScheduleRow({ date, dayPlan, officers, onChange }) {
             if (!dayPlan[preset.key]) return null;
             return (
               <div key={preset.key}>
-                <div className={`flex items-center justify-between mb-2`}>
+                <div className="flex items-center justify-between mb-2">
                   <span className={`text-xs font-bold uppercase tracking-wide ${preset.color.split(" ")[0]}`}>{preset.label}</span>
                   <button onClick={() => addSlot(preset.key, preset.defaultStart, preset.defaultEnd)}
                     className="text-xs text-blue-400 hover:underline flex items-center gap-1">
@@ -211,9 +210,9 @@ function DayScheduleRow({ date, dayPlan, officers, onChange }) {
   );
 }
 
-export default function EventScheduleBuilder({ event, officers, onShiftsCreated }) {
+export default function EventScheduleBuilder({ event, officers, companyCode, onShiftsCreated }) {
   const [showBuilder, setShowBuilder] = useState(false);
-  const [schedule, setSchedule] = useState({}); // { "yyyy-MM-dd": { day: [...slots], afternoon: [...], overnight: [...], custom_xxx: [...] } }
+  const [schedule, setSchedule] = useState({});
   const [saving, setSaving] = useState(false);
 
   const days = (() => {
@@ -237,7 +236,8 @@ export default function EventScheduleBuilder({ event, officers, onShiftsCreated 
       for (const [key, slots] of Object.entries(dayPlan)) {
         for (const slot of slots) {
           for (let q = 0; q < (slot.quantity || 1); q++) {
-            promises.push(base44.entities.Shift.create({
+            promises.push(Shift.create({
+              company_code: companyCode,
               site_id: event.site_id,
               site_name: event.site_name,
               event_id: event.id,
@@ -264,7 +264,8 @@ export default function EventScheduleBuilder({ event, officers, onShiftsCreated 
     const officerNames = allOfficerIds.map(id => officers.find(o => o.id === id)?.full_name || id).join(", ");
 
     if (officerNames) {
-      promises.push(base44.entities.Message.create({
+      promises.push(Message.create({
+        company_code: companyCode,
         sender_id: "system",
         sender_name: "SecureOps",
         channel: "broadcast",

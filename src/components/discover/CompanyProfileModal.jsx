@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { ClockRecord, Officer, Candidate, Shift } from "@/api/supabaseClient";
 import { X, Star, MapPin, Shield, Clock, Users, TrendingUp, UserCheck, UserX, CheckCircle, Mail, Globe, Calendar } from "lucide-react";
 import { computeScore } from "../../pages/Discover";
 
@@ -13,12 +13,15 @@ export default function CompanyProfileModal({ company, onClose }) {
       setLoading(false);
       return;
     }
-    Promise.all([
-      base44.entities.ClockRecord.filter({ company_code: company.company_code }, "-created_date", 500),
-      base44.entities.Officer.filter({ company_code: company.company_code, status: "active" }, "full_name", 200),
-      base44.entities.Candidate.filter({ company_code: company.company_code }, "-created_date", 200),
-      base44.entities.Shift.filter({ company_code: company.company_code }, "-date", 200),
-    ]).then(([clocks, officers, candidates, shifts]) => {
+
+    const loadAnalytics = async () => {
+      const [clocks, officers, candidates, shifts] = await Promise.all([
+        ClockRecord.list({ company_code: company.company_code }),
+        Officer.list({ company_code: company.company_code, status: "active" }),
+        Candidate.list({ company_code: company.company_code }),
+        Shift.list({ company_code: company.company_code }),
+      ]);
+
       const completed = clocks.filter(r => ["clocked_out", "approved"].includes(r.status));
       const onTimeRate = completed.length > 0
         ? completed.filter(r => !(r.flags || []).includes("late")).length / completed.length
@@ -54,7 +57,9 @@ export default function CompanyProfileModal({ company, onClose }) {
         totalCandidates: candidates.length,
       });
       setLoading(false);
-    });
+    };
+
+    loadAnalytics();
   }, [company]);
 
   const stars = analytics ? Math.round(analytics.score) : null;

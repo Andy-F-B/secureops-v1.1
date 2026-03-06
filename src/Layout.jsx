@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { base44 } from "@/api/base44Client";
+import { WhitelabelConfig } from "@/api/supabaseClient";
 import {
   LayoutDashboard, Calendar, Clock, Users, MapPin,
   FileText, Award, MessageSquare, ClipboardList,
@@ -36,7 +36,7 @@ export default function Layout({ children, currentPageName }) {
   const [themeHex, setThemeHex] = useState(null);
   const [companyName, setCompanyName] = useState(null);
   const [logoUrl, setLogoUrl] = useState(null);
-  const [featuresEnabled, setFeaturesEnabled] = useState(null); // null = not loaded yet
+  const [featuresEnabled, setFeaturesEnabled] = useState(null);
   const location = useLocation();
 
   useEffect(() => {
@@ -49,7 +49,9 @@ export default function Layout({ children, currentPageName }) {
     if (!stored) return;
     const o = JSON.parse(stored);
     if (!o.company_code) return;
-    base44.entities.WhitelabelConfig.filter({ company_code: o.company_code, setup_complete: true }, "-created_date", 1).then(configs => {
+
+    const loadConfig = async () => {
+      const configs = await WhitelabelConfig.list({ company_code: o.company_code, setup_complete: true });
       if (configs.length > 0) {
         const cfg = configs[0];
         if (cfg.theme_hex) setThemeHex(cfg.theme_hex);
@@ -57,13 +59,14 @@ export default function Layout({ children, currentPageName }) {
         if (cfg.logo_url) setLogoUrl(cfg.logo_url);
         if (cfg.features_enabled?.length > 0) setFeaturesEnabled(cfg.features_enabled);
       }
-    });
+    };
+
+    loadConfig();
   }, []);
 
   const role = officer?.role || "officer";
   const filtered = navItems.filter(n => {
     if (!n.roles.includes(role)) return false;
-    // If features loaded and item has a feature requirement, check it
     if (featuresEnabled && n.feature && !featuresEnabled.includes(n.feature)) return false;
     return true;
   });

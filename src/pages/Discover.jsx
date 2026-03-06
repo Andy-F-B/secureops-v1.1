@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { WhitelabelConfig, ClockRecords, Officers as OfficersEntity, Candidates } from "@/api/supabaseClient";
 import { createPageUrl } from "@/utils";
-import { Shield, MapPin, Search, Star, ArrowLeft, Users, Clock, TrendingUp, UserCheck, X, ChevronRight, Zap } from "lucide-react";
+import { Shield, MapPin, Search, Star, ArrowLeft, ChevronRight, Zap } from "lucide-react";
 import CompanyProfileModal from "../components/discover/CompanyProfileModal";
 
 export default function Discover() {
@@ -13,7 +13,7 @@ export default function Discover() {
   const [selected, setSelected] = useState(null);
 
   useEffect(() => {
-    base44.entities.WhitelabelConfig.filter({ public_listing: true, setup_complete: true }, "company_name", 100).then(res => {
+    WhitelabelConfig.list({ public_listing: true, setup_complete: true }).then(res => {
       setCompanies(res);
       setLoading(false);
     });
@@ -55,7 +55,9 @@ export default function Discover() {
             <Zap className="w-3 h-3" /> Live Directory
           </div>
           <h1 className="text-4xl font-black mb-3">Find Your Security Partner</h1>
-          <p className="text-gray-400 text-lg max-w-xl mx-auto">Browse verified security companies, compare performance scores, and find the right team for your event.</p>
+          <p className="text-gray-400 text-lg max-w-xl mx-auto">
+            Browse verified security companies, compare performance scores, and find the right team for your event.
+          </p>
         </div>
 
         {/* Filters */}
@@ -100,7 +102,9 @@ export default function Discover() {
           </div>
         ) : (
           <>
-            <p className="text-gray-500 text-sm mb-5">{filtered.length} company{filtered.length !== 1 ? "ies" : "y"} listed</p>
+            <p className="text-gray-500 text-sm mb-5">
+              {filtered.length} company{filtered.length !== 1 ? "ies" : "y"} listed
+            </p>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {filtered.map(company => (
                 <CompanyCard key={company.id} company={company} onClick={() => setSelected(company)} />
@@ -160,7 +164,9 @@ function CompanyCard({ company, onClick }) {
 
       <div className="mt-4 flex items-center justify-between pt-4 border-t border-gray-800">
         <span className="text-xs text-gray-600">{company.share_analytics ? "Analytics shared" : "Private company"}</span>
-        <span className="text-xs text-blue-400 group-hover:underline flex items-center gap-1">View Profile <ChevronRight className="w-3 h-3" /></span>
+        <span className="text-xs text-blue-400 group-hover:underline flex items-center gap-1">
+          View Profile <ChevronRight className="w-3 h-3" />
+        </span>
       </div>
     </button>
   );
@@ -172,9 +178,9 @@ function StarScore({ companyCode, small }) {
   useEffect(() => {
     if (!companyCode) return;
     Promise.all([
-      base44.entities.ClockRecord.filter({ company_code: companyCode }, "-created_date", 200),
-      base44.entities.Officer.filter({ company_code: companyCode, status: "active" }, "full_name", 200),
-      base44.entities.Candidate.filter({ company_code: companyCode }, "-created_date", 200),
+      ClockRecords.list({ company_code: companyCode }),
+      OfficersEntity.list({ company_code: companyCode, status: "active" }),
+      Candidates.list({ company_code: companyCode }),
     ]).then(([clocks, officers, candidates]) => {
       setScore(computeScore(clocks, officers, candidates));
     });
@@ -205,7 +211,6 @@ export function computeScore(clocks, officers, candidates) {
   let total = 0;
   let count = 0;
 
-  // 1. On-time rate (clocked_out + approved records without "late" flag / total completed)
   const completed = clocks.filter(r => ["clocked_out", "approved"].includes(r.status));
   if (completed.length > 0) {
     const onTime = completed.filter(r => !(r.flags || []).includes("late")).length;
@@ -213,31 +218,25 @@ export function computeScore(clocks, officers, candidates) {
     count++;
   }
 
-  // 2. Approval rate (approved / completed)
   if (completed.length > 0) {
     const approved = clocks.filter(r => r.status === "approved").length;
     total += Math.min((approved / Math.max(completed.length, 1)) * 5 * 2, 5);
     count++;
   }
 
-  // 3. Hire rate (approved candidates / total candidates)
   if (candidates.length > 0) {
     const hired = candidates.filter(c => c.onboarding_status === "approved").length;
     const hireRate = hired / candidates.length;
-    // Ideal hire rate ~30-50% (selective but not too restrictive)
     const hireScore = hireRate > 0.1 && hireRate < 0.7 ? 5 : hireRate >= 0.7 ? 3 : 2;
     total += hireScore;
     count++;
   }
 
-  // 4. Retention (active officers vs total ever — approximated by active/total)
   if (officers.length > 0) {
-    // More officers = more established, scale 1-5 (capped at 50 officers = 5 stars)
     total += Math.min((officers.length / 20) * 5, 5);
     count++;
   }
 
-  // 5. Completion rate (no missed shifts)
   if (clocks.length > 0) {
     const missed = clocks.filter(r => r.status === "missed").length;
     const completionRate = 1 - (missed / clocks.length);
@@ -245,6 +244,6 @@ export function computeScore(clocks, officers, candidates) {
     count++;
   }
 
-  if (count === 0) return 3.0; // Default neutral score
+  if (count === 0) return 3.0;
   return Math.min(Math.max(total / count, 1), 5);
 }

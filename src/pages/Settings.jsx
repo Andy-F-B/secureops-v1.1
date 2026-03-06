@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
-import { Settings as SettingsIcon, Globe, Eye, EyeOff, Shield, Palette, Users, Tag, MapPin, Mail, Link, Building, Star, Save, Check, ChevronDown, ChevronUp, Briefcase } from "lucide-react";
+import { WhitelabelConfig } from "@/api/supabaseClient";
+import { Settings as SettingsIcon, Globe, Shield, Palette, Tag, MapPin, Building, Save, Check, ChevronDown, ChevronUp, Briefcase } from "lucide-react";
 
 const SERVICE_OPTIONS = [
   "Corporate Events", "Concerts & Festivals", "Retail Security", "Nightlife & Venues",
@@ -30,7 +30,9 @@ export default function Settings() {
     const o = JSON.parse(stored);
     setOfficer(o);
     if (!o.company_code) { setLoading(false); return; }
-    base44.entities.WhitelabelConfig.filter({ company_code: o.company_code, setup_complete: true }, "-created_date", 1).then(res => {
+
+    const loadConfig = async () => {
+      const res = await WhitelabelConfig.list({ company_code: o.company_code, setup_complete: true });
       if (res.length > 0) {
         setConfig(res[0]);
         const c = res[0];
@@ -49,13 +51,15 @@ export default function Settings() {
         });
       }
       setLoading(false);
-    });
+    };
+
+    loadConfig();
   }, []);
 
   const save = async () => {
     if (!config) return;
     setSaving(true);
-    await base44.entities.WhitelabelConfig.update(config.id, form);
+    await WhitelabelConfig.update(config.id, form);
     setSaving(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);

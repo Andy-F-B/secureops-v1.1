@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { OnboardingRecords, Messages as MessagesEntity } from "@/api/supabaseClient";
 import { motion, AnimatePresence } from "framer-motion";
 import { Video, ClipboardList, FileText, Calendar, Brain, CheckCircle, Lock, ChevronRight, MessageSquare, Send, X } from "lucide-react";
 import IntroVideo from "../components/onboarding/IntroVideo";
@@ -36,13 +36,14 @@ export default function Onboarding() {
   }, []);
 
   const loadRecord = async (cand) => {
-    const records = await base44.entities.OnboardingRecord.filter({ candidate_id: cand.id });
+    const records = await OnboardingRecords.list({ candidate_id: cand.id });
     if (records.length > 0) {
       setRecord(records[0]);
     } else {
-      const newRecord = await base44.entities.OnboardingRecord.create({
+      const newRecord = await OnboardingRecords.create({
         candidate_id: cand.id,
         candidate_name: cand.full_name,
+        company_code: cand.company_code,
       });
       setRecord(newRecord);
     }
@@ -52,9 +53,9 @@ export default function Onboarding() {
   const updateRecord = async (data) => {
     if (!record) return;
     const updated = { ...record, ...data };
-    await base44.entities.OnboardingRecord.update(record.id, data);
+    await OnboardingRecords.update(record.id, data);
     const pct = calcPercentage(updated);
-    await base44.entities.OnboardingRecord.update(record.id, { overall_percentage: pct });
+    await OnboardingRecords.update(record.id, { overall_percentage: pct });
     setRecord({ ...updated, overall_percentage: pct });
   };
 
@@ -84,37 +85,26 @@ export default function Onboarding() {
   const openChat = async (cand) => {
     setShowChat(true);
     setUnreadCount(0);
-    const msgs = await base44.entities.Message.filter({ site_id: `cand_${cand.id}`, channel: "direct" }, "created_date", 100);
+    const msgs = await MessagesEntity.list({ site_id: `cand_${cand.id}`, channel: "direct" });
     setChatMessages(msgs);
   };
 
-  // Poll for unread messages from HR
-  useEffect(() => {
-    if (!candidate) return;
-    const unsubscribe = base44.entities.Message.subscribe((event) => {
-      if (event.type === "create") {
-        const msg = event.data;
-        if (msg.site_id === `cand_${candidate.id}` && msg.sender_id !== candidate.id) {
-          if (!showChat) setUnreadCount(prev => prev + 1);
-          else setChatMessages(prev => [...prev, msg]);
-        }
-      }
-    });
-    return unsubscribe;
-  }, [candidate, showChat]);
+  // Note: Base44's real-time subscribe is not available in Supabase client helper.
+  // To add real-time unread notifications, set up a Supabase Realtime channel here.
 
   const sendMessage = async () => {
     if (!chatInput.trim() || !candidate) return;
-    await base44.entities.Message.create({
+    await MessagesEntity.create({
       sender_id: candidate.id,
       sender_name: candidate.full_name,
       site_id: `cand_${candidate.id}`,
       channel: "direct",
       content: chatInput.trim(),
       read_by: [candidate.id],
+      company_code: candidate.company_code,
     });
     setChatInput("");
-    const msgs = await base44.entities.Message.filter({ site_id: `cand_${candidate.id}`, channel: "direct" }, "created_date", 100);
+    const msgs = await MessagesEntity.list({ site_id: `cand_${candidate.id}`, channel: "direct" });
     setChatMessages(msgs);
   };
 
@@ -138,7 +128,8 @@ export default function Onboarding() {
             <p className="text-gray-400 text-sm">Candidate ID: {candidate?.candidate_id}</p>
           </div>
           <div className="flex items-center gap-3">
-            <button onClick={() => openChat(candidate)} className="relative flex items-center gap-1.5 text-purple-400 hover:text-purple-300 text-sm border border-purple-800/50 px-3 py-1.5 rounded-lg">
+            <button onClick={() => openChat(candidate)}
+              className="relative flex items-center gap-1.5 text-purple-400 hover:text-purple-300 text-sm border border-purple-800/50 px-3 py-1.5 rounded-lg">
               <MessageSquare className="w-4 h-4" /> Message HR
               {unreadCount > 0 && (
                 <span className="absolute -top-1.5 -right-1.5 bg-red-600 text-white text-xs w-4 h-4 rounded-full flex items-center justify-center font-bold">
@@ -146,8 +137,11 @@ export default function Onboarding() {
                 </span>
               )}
             </button>
-            <button onClick={() => { sessionStorage.removeItem("secureops_candidate"); window.location.href = createPageUrl("CandidateLogin"); }}
-              className="text-gray-500 hover:text-gray-300 text-sm">Sign Out</button>
+            <button
+              onClick={() => { sessionStorage.removeItem("secureops_candidate"); window.location.href = createPageUrl("CandidateLogin"); }}
+              className="text-gray-500 hover:text-gray-300 text-sm">
+              Sign Out
+            </button>
           </div>
         </div>
       </div>
@@ -160,10 +154,15 @@ export default function Onboarding() {
             <span className="text-purple-400 font-bold text-lg">{pct}%</span>
           </div>
           <div className="w-full h-3 bg-gray-800 rounded-full overflow-hidden">
-            <motion.div className="h-3 bg-gradient-to-r from-purple-600 to-purple-400 rounded-full" animate={{ width: `${pct}%` }} transition={{ duration: 0.6, ease: "easeOut" }} />
+            <motion.div
+              className="h-3 bg-gradient-to-r from-purple-600 to-purple-400 rounded-full"
+              animate={{ width: `${pct}%` }}
+              transition={{ duration: 0.6, ease: "easeOut" }}
+            />
           </div>
           {pct === 100 && (
-            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mt-3 flex items-center gap-2 text-green-400 text-sm">
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+              className="mt-3 flex items-center gap-2 text-green-400 text-sm">
               <CheckCircle className="w-4 h-4" /> All steps complete! HR will review your application.
             </motion.div>
           )}
@@ -177,9 +176,15 @@ export default function Onboarding() {
               const isActive = activeStep === step.id;
               return (
                 <button key={step.id} onClick={() => setActiveStep(step.id)}
-                  className={`w-full flex items-center gap-3 p-4 rounded-xl border transition-all text-left ${isActive ? "border-purple-600 bg-purple-900/20" : "border-gray-800 bg-gray-900 hover:border-gray-600"}`}>
-                  <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${status === "done" ? "bg-green-900/40" : isActive ? "bg-purple-900/40" : "bg-gray-800"}`}>
-                    {status === "done" ? <CheckCircle className="w-5 h-5 text-green-400" /> : <step.icon className={`w-5 h-5 ${isActive ? "text-purple-400" : "text-gray-500"}`} />}
+                  className={`w-full flex items-center gap-3 p-4 rounded-xl border transition-all text-left ${
+                    isActive ? "border-purple-600 bg-purple-900/20" : "border-gray-800 bg-gray-900 hover:border-gray-600"
+                  }`}>
+                  <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                    status === "done" ? "bg-green-900/40" : isActive ? "bg-purple-900/40" : "bg-gray-800"
+                  }`}>
+                    {status === "done"
+                      ? <CheckCircle className="w-5 h-5 text-green-400" />
+                      : <step.icon className={`w-5 h-5 ${isActive ? "text-purple-400" : "text-gray-500"}`} />}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className={`text-sm font-medium ${isActive ? "text-white" : "text-gray-300"}`}>{step.label}</p>
@@ -195,7 +200,9 @@ export default function Onboarding() {
           <div className="lg:col-span-2">
             <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 min-h-[400px]">
               <AnimatePresence mode="wait">
-                <motion.div key={activeStep} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.25 }}>
+                <motion.div key={activeStep}
+                  initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.25 }}>
                   {activeStep === "video" && <IntroVideo record={record} onUpdate={updateRecord} />}
                   {activeStep === "questionnaire" && <OnboardingQuestionnaire record={record} onUpdate={updateRecord} />}
                   {activeStep === "documents" && <DocumentUploader record={record} onUpdate={updateRecord} />}
@@ -205,7 +212,6 @@ export default function Onboarding() {
               </AnimatePresence>
             </div>
 
-            {/* Continue button */}
             {getStepStatus(activeStep) === "done" && activeStep !== "assessment" && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mt-3 flex justify-end">
                 <button onClick={() => {
@@ -220,6 +226,7 @@ export default function Onboarding() {
           </div>
         </div>
       </div>
+
       {/* CHAT MODAL */}
       {showChat && candidate && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-end sm:items-center justify-center p-4">
@@ -232,7 +239,9 @@ export default function Onboarding() {
               <button onClick={() => setShowChat(false)}><X className="w-5 h-5 text-gray-500" /></button>
             </div>
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
-              {chatMessages.length === 0 && <p className="text-gray-600 text-sm text-center pt-10">Send a message to HR. They'll respond shortly.</p>}
+              {chatMessages.length === 0 && (
+                <p className="text-gray-600 text-sm text-center pt-10">Send a message to HR. They'll respond shortly.</p>
+              )}
               {chatMessages.map(msg => {
                 const isMe = msg.sender_id === candidate.id;
                 return (

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { WhitelabelConfig, Officer, Candidate, Site, uploadFile, getSignedUrl } from "@/api/supabaseClient";
 import { createPageUrl } from "@/utils";
 import { Shield, ChevronRight, ChevronLeft, Check, Plus, X, Palette, Upload, Image } from "lucide-react";
 
@@ -54,17 +54,14 @@ export default function WhitelabelSetup() {
   const handleCodeSubmit = async (e) => {
     e.preventDefault();
     if (!code.trim()) { setCodeError("Please enter a code."); return; }
-    // Look for existing config
-    const existing = await base44.entities.WhitelabelConfig.filter({ code: code.trim() }, "-created_date", 1);
+    const existing = await WhitelabelConfig.list({ code: code.trim() });
     if (existing.length === 0) {
       setCodeError("Invalid setup code. Please check your code and try again.");
       return;
     }
-    if (existing.length > 0) {
-      const cfg = existing[0];
-      setConfig(cfg);
-      // Restore previous answers
-      if (cfg.answers) {
+    const cfg = existing[0];
+    setConfig(cfg);
+    if (cfg.answers) {
       const a = cfg.answers;
       if (a.companyName) setCompanyName(a.companyName);
       if (a.companyCode) setCompanyCode(a.companyCode);
@@ -75,13 +72,12 @@ export default function WhitelabelSetup() {
       if (a.themeColor) setThemeColor(a.themeColor);
       if (a.customHex) setCustomHex(a.customHex);
       if (a.logoUrl) setLogoUrl(a.logoUrl);
-      }
-      if (cfg.setup_complete) {
-        setPhase("done");
-        return;
-      }
-      setStep(cfg.setup_step || 0);
     }
+    if (cfg.setup_complete) {
+      setPhase("done");
+      return;
+    }
+    setStep(cfg.setup_step || 0);
     setPhase("wizard");
   };
 
@@ -89,15 +85,19 @@ export default function WhitelabelSetup() {
     const file = e.target.files?.[0];
     if (!file) return;
     setLogoUploading(true);
-    const { file_url } = await base44.integrations.Core.UploadFile({ file });
-    setLogoUrl(file_url);
+    const ext = file.name.split(".").pop();
+    const path = `${code.trim() || "setup"}/${Date.now()}.${ext}`;
+    const storagePath = await uploadFile("company-logos", file, path);
+    // Generate a signed URL to preview the logo immediately
+    const signedUrl = await getSignedUrl("company-logos", storagePath, 3600);
+    setLogoUrl(signedUrl);
     setLogoUploading(false);
   };
 
   const saveProgress = async (nextStep) => {
     if (!config) return;
     const answers = { companyName, companyCode, features, admins, officers, sites, themeColor, customHex, logoUrl };
-    await base44.entities.WhitelabelConfig.update(config.id, {
+    await WhitelabelConfig.update(config.id, {
       setup_step: nextStep,
       answers,
       features_enabled: features,
@@ -122,7 +122,8 @@ export default function WhitelabelSetup() {
     setSubmitting(true);
     const code_upper = companyCode.trim().toUpperCase();
     const answers = { companyName, companyCode, features, admins, officers, sites, themeColor, customHex, logoUrl };
-    await base44.entities.WhitelabelConfig.update(config.id, {
+
+    await WhitelabelConfig.update(config.id, {
       setup_complete: true,
       setup_step: TOTAL_STEPS,
       answers,
@@ -138,9 +139,9 @@ export default function WhitelabelSetup() {
     });
 
     // Create default admin officer (ADMIN001 / 1234) if not already exists
-    const existingAdmin = await base44.entities.Officer.filter({ employee_id: "ADMIN001", company_code: code_upper }, "full_name", 1);
+    const existingAdmin = await Officer.list({ employee_id: "ADMIN001", company_code: code_upper });
     if (existingAdmin.length === 0) {
-      await base44.entities.Officer.create({
+      await Officer.create({
         employee_id: "ADMIN001",
         full_name: "Admin",
         pin: "1234",
@@ -151,9 +152,9 @@ export default function WhitelabelSetup() {
     }
 
     // Create default candidate (CAND001 / 1234) if not already exists
-    const existingCand = await base44.entities.Candidate.filter({ candidate_id: "CAND001", company_code: code_upper }, "full_name", 1);
+    const existingCand = await Candidate.list({ candidate_id: "CAND001", company_code: code_upper });
     if (existingCand.length === 0) {
-      await base44.entities.Candidate.create({
+      await Candidate.create({
         candidate_id: "CAND001",
         full_name: "Candidate",
         pin: "1234",
@@ -168,9 +169,9 @@ export default function WhitelabelSetup() {
     const namedAdmins = admins.filter(a => a.name);
     for (const a of namedAdmins) {
       const id = a.employee_id || `ADMIN${String(namedAdmins.indexOf(a) + 2).padStart(3, "0")}`;
-      const exists = await base44.entities.Officer.filter({ employee_id: id, company_code: code_upper }, "full_name", 1);
+      const exists = await Officer.list({ employee_id: id, company_code: code_upper });
       if (exists.length === 0) {
-        await base44.entities.Officer.create({
+        await Officer.create({
           employee_id: id,
           full_name: a.name,
           pin: a.pin || "1234",
@@ -186,9 +187,9 @@ export default function WhitelabelSetup() {
     for (let i = 0; i < namedOfficers.length; i++) {
       const o = namedOfficers[i];
       const id = o.employee_id || `OFF${String(i + 1).padStart(3, "0")}`;
-      const exists = await base44.entities.Officer.filter({ employee_id: id, company_code: code_upper }, "full_name", 1);
+      const exists = await Officer.list({ employee_id: id, company_code: code_upper });
       if (exists.length === 0) {
-        await base44.entities.Officer.create({
+        await Officer.create({
           employee_id: id,
           full_name: o.name,
           pin: o.pin || "1234",
@@ -202,7 +203,7 @@ export default function WhitelabelSetup() {
     // Create pre-loaded sites
     const namedSites = sites.filter(s => s.name);
     for (const s of namedSites) {
-      await base44.entities.Site.create({
+      await Site.create({
         name: s.name,
         address: s.address || "",
         company_code: code_upper,

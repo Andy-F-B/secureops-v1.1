@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
-import { FileText, Plus, X, CheckSquare, Upload, Trash2 } from "lucide-react";
+import { SOP, Site } from "@/api/supabaseClient";
+import { FileText, Plus, X, CheckSquare, Trash2 } from "lucide-react";
 
 export default function SOPs() {
   const [officer, setOfficer] = useState(null);
@@ -24,8 +24,8 @@ export default function SOPs() {
     setLoading(true);
     const isAdmin = o.role === "admin" || o.role === "supervisor";
     const [s, si] = await Promise.all([
-      base44.entities.SOP.filter({ status: "active" }, "-created_date", 100),
-      base44.entities.Site.filter({ status: "active" }, "name"),
+      SOP.list({ status: "active" }),
+      Site.list({ status: "active" }),
     ]);
     setSops(isAdmin ? s : s.filter(sop => o.assigned_sites?.includes(sop.site_id)));
     setSites(si);
@@ -37,21 +37,21 @@ export default function SOPs() {
     const alreadyAcked = acks.some(a => a.officer_id === officer.id && a.version === sop.version);
     if (alreadyAcked) return;
     const updated = [...acks, { officer_id: officer.id, officer_name: officer.full_name, acknowledged_at: new Date().toISOString(), version: sop.version }];
-    await base44.entities.SOP.update(sop.id, { acknowledgments: updated });
+    await SOP.update(sop.id, { acknowledgments: updated });
     loadData(officer);
     setSelected({ ...sop, acknowledgments: updated });
   };
 
   const handleCreate = async () => {
     const site = sites.find(s => s.id === form.site_id);
-    await base44.entities.SOP.create({ ...form, site_name: site?.name || "", version: "1.0", status: "active", acknowledgments: [] });
+    await SOP.create({ ...form, company_code: officer.company_code, site_name: site?.name || "", version: "1.0", status: "active", acknowledgments: [] });
     setShowCreate(false);
     loadData(officer);
   };
 
   const deleteSOP = async (sop) => {
     if (!window.confirm(`Delete SOP "${sop.title}"?`)) return;
-    await base44.entities.SOP.delete(sop.id);
+    await SOP.delete(sop.id);
     if (selected?.id === sop.id) setSelected(null);
     loadData(officer);
   };

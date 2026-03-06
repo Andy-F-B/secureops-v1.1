@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { Shifts, ClockRecords } from "@/api/supabaseClient";
 import { Clock, MapPin, CheckCircle, AlertTriangle, LogIn, LogOut } from "lucide-react";
 import { format, differenceInMinutes } from "date-fns";
 
@@ -10,7 +10,6 @@ export default function ClockIn() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [gpsStatus, setGpsStatus] = useState("idle");
-  const [location, setLocation] = useState(null);
 
   useEffect(() => {
     const stored = sessionStorage.getItem("secureops_officer");
@@ -24,11 +23,14 @@ export default function ClockIn() {
   const loadData = async (o) => {
     setLoading(true);
     const today = format(new Date(), "yyyy-MM-dd");
-    const allShifts = await base44.entities.Shift.filter({ date: today }, "start_time", 20);
+
+    // Get today's shifts for this company, then filter to ones assigned to this officer
+    const allShifts = await Shifts.list({ date: today, company_code: o.company_code });
     const myShifts = allShifts.filter(s => s.assigned_officers?.includes(o.id));
     setTodayShifts(myShifts);
 
-    const records = await base44.entities.ClockRecord.filter({ officer_id: o.id, status: "clocked_in" }, "-clock_in_time", 1);
+    // Get active clock-in record if one exists
+    const records = await ClockRecords.list({ officer_id: o.id, status: "clocked_in" });
     setActiveRecord(records[0] || null);
     setLoading(false);
   };
@@ -37,8 +39,14 @@ export default function ClockIn() {
     if (!navigator.geolocation) { resolve(null); return; }
     setGpsStatus("getting");
     navigator.geolocation.getCurrentPosition(
-      pos => { setGpsStatus("got"); resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }); },
-      () => { setGpsStatus("denied"); resolve(null); }
+      pos => {
+        setGpsStatus("got");
+        resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+      },
+      () => {
+        setGpsStatus("denied");
+        resolve(null);
+      }
     );
   });
 
@@ -51,7 +59,7 @@ export default function ClockIn() {
     const lateMinutes = differenceInMinutes(new Date(), scheduledStart);
     const flags = lateMinutes > 10 ? ["late"] : [];
 
-    const record = await base44.entities.ClockRecord.create({
+    const record = await ClockRecords.create({
       officer_id: officer.id,
       officer_name: officer.full_name,
       shift_id: shift.id,
@@ -77,7 +85,7 @@ export default function ClockIn() {
     const outTime = new Date(now);
     const totalHours = Math.round((outTime - inTime) / 36000) / 100;
 
-    await base44.entities.ClockRecord.update(activeRecord.id, {
+    await ClockRecords.update(activeRecord.id, {
       clock_out_time: now,
       clock_out_lat: loc?.lat,
       clock_out_lng: loc?.lng,
@@ -90,7 +98,11 @@ export default function ClockIn() {
     setActionLoading(false);
   };
 
-  if (loading) return <div className="flex items-center justify-center h-64"><p className="text-gray-400">Loading...</p></div>;
+  if (loading) return (
+    <div className="flex items-center justify-center h-64">
+      <p className="text-gray-400">Loading...</p>
+    </div>
+  );
 
   return (
     <div className="max-w-lg mx-auto space-y-6">
@@ -105,7 +117,9 @@ export default function ClockIn() {
           <CheckCircle className="w-12 h-12 text-green-400 mx-auto mb-3" />
           <p className="text-green-400 font-semibold text-lg">Currently Clocked In</p>
           <p className="text-white font-bold text-xl mt-1">{activeRecord.site_name}</p>
-          <p className="text-gray-400 text-sm mt-1">Since {format(new Date(activeRecord.clock_in_time), "HH:mm")}</p>
+          <p className="text-gray-400 text-sm mt-1">
+            Since {format(new Date(activeRecord.clock_in_time), "HH:mm")}
+          </p>
           {activeRecord.flags?.includes("late") && (
             <div className="mt-3 flex items-center justify-center gap-2 text-yellow-400 text-sm">
               <AlertTriangle className="w-4 h-4" /> Late clock-in flagged
@@ -140,7 +154,9 @@ export default function ClockIn() {
                       <Clock className="w-3 h-3" /> {shift.start_time} – {shift.end_time}
                     </p>
                   </div>
-                  <span className="text-xs px-2 py-1 bg-blue-900/50 text-blue-400 rounded-full">{shift.status}</span>
+                  <span className="text-xs px-2 py-1 bg-blue-900/50 text-blue-400 rounded-full">
+                    {shift.status}
+                  </span>
                 </div>
                 <button
                   onClick={() => handleClockIn(shift)}

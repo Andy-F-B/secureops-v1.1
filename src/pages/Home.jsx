@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { createPageUrl } from "@/utils";
-import { base44 } from "@/api/base44Client";
+import { WhitelabelConfig, PortalRequests } from "@/api/supabaseClient";
 import { Shield, Clock, Users, Calendar, MapPin, FileText, Award, MessageSquare, BarChart2, Lock, ChevronRight, Zap, CheckCircle, Search } from "lucide-react";
 
 const FEATURES = [
@@ -41,8 +41,8 @@ export default function Home() {
     setWlError("");
 
     try {
-      const configs = await base44.entities.WhitelabelConfig.filter({ code: wlCode.trim() }, "-created_date", 1);
-      if (configs.length === 0) {
+      const configs = await WhitelabelConfig.list({ code: wlCode.trim() });
+      if (!configs || configs.length === 0) {
         setWlError("Invalid code. Please try again.");
         return;
       }
@@ -58,13 +58,35 @@ export default function Home() {
         full_name: cfg.default_admin_name || "John Smith",
         employee_id: cfg.default_admin_id || "ADMIN001",
         role: cfg.default_admin_role || "admin",
+        company_code: cfg.company_code,
         status: "active",
         pin: cfg.default_admin_pin || "1234",
       };
       sessionStorage.setItem("secureops_officer", JSON.stringify(defaultAdmin));
       window.location.href = createPageUrl("Dashboard");
+    } catch (err) {
+      console.error("Login error:", err);
+      setWlError("An error occurred. Please try again.");
     } finally {
       setWlLoading(false);
+    }
+  };
+
+  const handleRequestPortal = async () => {
+    try {
+      await PortalRequests.create({
+        name: portalForm.name,
+        email: portalForm.email,
+        company: portalForm.company,
+        plan: portalForm.users,
+        status: "pending",
+      });
+      alert(`Thank you for your interest! We'll contact you at ${portalForm.email} soon.`);
+      setShowRequestPortal(false);
+      setPortalForm({ name: "", email: "", company: "", users: "1-50" });
+    } catch (err) {
+      console.error("Portal request error:", err);
+      alert("An error occurred. Please try again.");
     }
   };
 
@@ -76,23 +98,22 @@ export default function Home() {
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
         <div className="relative max-w-6xl mx-auto px-6 pt-16 pb-24">
           <div className="flex items-center justify-between mb-14">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-600/30">
-              <Shield className="w-5 h-5 text-white" />
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-600/30">
+                <Shield className="w-5 h-5 text-white" />
+              </div>
+              <span className="text-xl font-bold tracking-tight">SecureOps</span>
             </div>
-            <span className="text-xl font-bold tracking-tight">SecureOps</span>
-          </div>
-          <div className="flex items-center gap-3">
-
-            <a href={createPageUrl("CandidateLogin")} className="text-gray-400 hover:text-white text-sm transition-colors hidden sm:block">Candidate Portal</a>
-            <a href={createPageUrl("OfficerLogin")} className="text-gray-400 hover:text-white text-sm transition-colors hidden sm:block">Guard Login</a>
-            <a href={createPageUrl("Discover")} className="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition-colors border border-gray-700">
-              <Search className="w-4 h-4 text-blue-400" /> Discover Companies
-            </a>
-            <button onClick={() => setShowWlLogin(true)} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition-colors shadow-lg shadow-blue-600/20">
-              Get Started <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
+            <div className="flex items-center gap-3">
+              <a href={createPageUrl("CandidateLogin")} className="text-gray-400 hover:text-white text-sm transition-colors hidden sm:block">Candidate Portal</a>
+              <a href={createPageUrl("OfficerLogin")} className="text-gray-400 hover:text-white text-sm transition-colors hidden sm:block">Guard Login</a>
+              <a href={createPageUrl("Discover")} className="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition-colors border border-gray-700">
+                <Search className="w-4 h-4 text-blue-400" /> Discover Companies
+              </a>
+              <button onClick={() => setShowWlLogin(true)} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition-colors shadow-lg shadow-blue-600/20">
+                Get Started <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
           </div>
 
           <div className="max-w-3xl">
@@ -111,7 +132,6 @@ export default function Home() {
                 Request a Portal <ChevronRight className="w-5 h-5" />
               </button>
               <div className="flex flex-col sm:flex-row gap-3">
-
                 <a href={createPageUrl("OfficerLogin")} className="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-white font-semibold px-6 py-3.5 rounded-xl text-base transition-colors border border-gray-700">
                   <Lock className="w-4 h-4 text-gray-400" /> Guard Login
                 </a>
@@ -189,15 +209,9 @@ export default function Home() {
             <span className="text-gray-600 text-sm">© 2026</span>
           </div>
           <div className="flex items-center gap-6 text-gray-600 text-xs">
-
             <a href={createPageUrl("OfficerLogin")} className="hover:text-gray-400">Officer Portal</a>
             <a href={createPageUrl("CandidateLogin")} className="hover:text-gray-400">Candidate Portal</a>
-            <button
-              onClick={() => setShowDevLogin(true)}
-              className="hover:text-gray-400 transition-colors"
-            >
-              Developer
-            </button>
+            <button onClick={() => setShowDevLogin(true)} className="hover:text-gray-400 transition-colors">Developer</button>
           </div>
         </div>
       </footer>
@@ -222,8 +236,12 @@ export default function Home() {
               />
               {wlError && <p className="text-red-400 text-xs">{wlError}</p>}
               <div className="flex gap-3">
-                <button type="button" onClick={() => { setShowWlLogin(false); setWlCode(""); setWlError(""); }} className="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 py-2.5 rounded-xl text-sm transition-colors">Cancel</button>
-                <button type="submit" disabled={wlLoading} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-semibold py-2.5 rounded-xl text-sm disabled:opacity-50">
+                <button type="button" onClick={() => { setShowWlLogin(false); setWlCode(""); setWlError(""); }}
+                  className="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 py-2.5 rounded-xl text-sm transition-colors">
+                  Cancel
+                </button>
+                <button type="submit" disabled={wlLoading}
+                  className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-semibold py-2.5 rounded-xl text-sm disabled:opacity-50">
                   {wlLoading ? "Loading..." : "Continue"}
                 </button>
               </div>
@@ -251,8 +269,13 @@ export default function Home() {
               />
               {devError && <p className="text-red-400 text-xs">{devError}</p>}
               <div className="flex gap-3">
-                <button type="button" onClick={() => setShowDevLogin(false)} className="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 py-2.5 rounded-xl text-sm transition-colors">Cancel</button>
-                <button type="submit" className="flex-1 bg-orange-600 hover:bg-orange-500 text-white font-semibold py-2.5 rounded-xl text-sm">Enter</button>
+                <button type="button" onClick={() => setShowDevLogin(false)}
+                  className="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 py-2.5 rounded-xl text-sm transition-colors">
+                  Cancel
+                </button>
+                <button type="submit" className="flex-1 bg-orange-600 hover:bg-orange-500 text-white font-semibold py-2.5 rounded-xl text-sm">
+                  Enter
+                </button>
               </div>
             </form>
           </div>
@@ -271,71 +294,31 @@ export default function Home() {
               <p className="text-gray-400 text-xs mt-1">Choose your plan and tell us about your security team</p>
             </div>
             <div className="p-6 space-y-6">
-              {/* Contact Form */}
               <div className="space-y-4">
-                <input
-                  type="text"
-                  value={portalForm.name}
+                <input type="text" value={portalForm.name}
                   onChange={e => setPortalForm(f => ({ ...f, name: e.target.value }))}
                   placeholder="Your Name"
-                  className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white placeholder-gray-600 focus:outline-none focus:border-blue-500 text-sm"
-                />
-                <input
-                  type="email"
-                  value={portalForm.email}
+                  className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white placeholder-gray-600 focus:outline-none focus:border-blue-500 text-sm" />
+                <input type="email" value={portalForm.email}
                   onChange={e => setPortalForm(f => ({ ...f, email: e.target.value }))}
                   placeholder="Company Email"
-                  className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white placeholder-gray-600 focus:outline-none focus:border-blue-500 text-sm"
-                />
-                <input
-                  type="text"
-                  value={portalForm.company}
+                  className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white placeholder-gray-600 focus:outline-none focus:border-blue-500 text-sm" />
+                <input type="text" value={portalForm.company}
                   onChange={e => setPortalForm(f => ({ ...f, company: e.target.value }))}
                   placeholder="Company Name"
-                  className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white placeholder-gray-600 focus:outline-none focus:border-blue-500 text-sm"
-                />
+                  className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white placeholder-gray-600 focus:outline-none focus:border-blue-500 text-sm" />
               </div>
 
-              {/* Pricing Plans */}
               <div>
                 <p className="text-gray-400 text-sm font-semibold mb-3">Select Your Plan</p>
                 <div className="space-y-3">
-                  <PricingOption
-                    title="Startup"
-                    users="1 - 50 Officers"
-                    price="$30/Month"
-                    perUser="+ $4 per active user"
-                    selected={portalForm.users === "1-50"}
-                    onClick={() => setPortalForm(f => ({ ...f, users: "1-50" }))}
-                  />
-                  <PricingOption
-                    title="Growth"
-                    users="51 - 200 Officers"
-                    price="$50/Month"
-                    perUser="+ $4 per active user"
-                    selected={portalForm.users === "51-200"}
-                    onClick={() => setPortalForm(f => ({ ...f, users: "51-200" }))}
-                  />
-                  <PricingOption
-                    title="Enterprise"
-                    users="200+ Officers"
-                    price="$100/Month"
-                    perUser="+ $4 per active user"
-                    selected={portalForm.users === "200+"}
-                    onClick={() => setPortalForm(f => ({ ...f, users: "200+" }))}
-                  />
-                  <PricingOption
-                    title="Whitelabel"
-                    users="Custom Branding"
-                    price="$150/Month"
-                    perUser="+ $4 per active user + custom features"
-                    selected={portalForm.users === "whitelabel"}
-                    onClick={() => setPortalForm(f => ({ ...f, users: "whitelabel" }))}
-                  />
+                  <PricingOption title="Startup" users="1 - 50 Officers" price="$30/Month" perUser="+ $4 per active user" selected={portalForm.users === "1-50"} onClick={() => setPortalForm(f => ({ ...f, users: "1-50" }))} />
+                  <PricingOption title="Growth" users="51 - 200 Officers" price="$50/Month" perUser="+ $4 per active user" selected={portalForm.users === "51-200"} onClick={() => setPortalForm(f => ({ ...f, users: "51-200" }))} />
+                  <PricingOption title="Enterprise" users="200+ Officers" price="$100/Month" perUser="+ $4 per active user" selected={portalForm.users === "200+"} onClick={() => setPortalForm(f => ({ ...f, users: "200+" }))} />
+                  <PricingOption title="Whitelabel" users="Custom Branding" price="$150/Month" perUser="+ $4 per active user + custom features" selected={portalForm.users === "whitelabel"} onClick={() => setPortalForm(f => ({ ...f, users: "whitelabel" }))} />
                 </div>
               </div>
 
-              {/* CTA */}
               <div className="bg-blue-900/20 border border-blue-800/40 rounded-xl p-4 text-sm text-blue-300">
                 <p className="font-semibold mb-1">✓ 14-day free trial included</p>
                 <p className="text-xs text-blue-400">Our team will contact you within 24 hours to set up your portal</p>
@@ -343,27 +326,12 @@ export default function Home() {
             </div>
 
             <div className="p-6 border-t border-gray-800 flex gap-3 sticky bottom-0 bg-gray-900">
-              <button
-                onClick={() => setShowRequestPortal(false)}
-                className="flex-1 bg-gray-800 text-gray-300 py-3 rounded-xl text-sm font-semibold hover:bg-gray-700 transition-colors"
-              >
+              <button onClick={() => setShowRequestPortal(false)}
+                className="flex-1 bg-gray-800 text-gray-300 py-3 rounded-xl text-sm font-semibold hover:bg-gray-700 transition-colors">
                 Cancel
               </button>
-              <button
-                onClick={async () => {
-                  await base44.entities.PortalRequest.create({
-                    name: portalForm.name,
-                    email: portalForm.email,
-                    company: portalForm.company,
-                    plan: portalForm.users,
-                    status: "pending"
-                  });
-                  alert(`Thank you for your interest! We'll contact you at ${portalForm.email} soon.`);
-                  setShowRequestPortal(false);
-                  setPortalForm({ name: "", email: "", company: "", users: "1-50" });
-                }}
-                className="flex-1 bg-blue-600 text-white py-3 rounded-xl text-sm font-semibold hover:bg-blue-500 transition-colors"
-              >
+              <button onClick={handleRequestPortal}
+                className="flex-1 bg-blue-600 text-white py-3 rounded-xl text-sm font-semibold hover:bg-blue-500 transition-colors">
                 Request Portal
               </button>
             </div>
@@ -376,14 +344,10 @@ export default function Home() {
 
 function PricingOption({ title, users, price, perUser, selected, onClick }) {
   return (
-    <button
-      onClick={onClick}
+    <button onClick={onClick}
       className={`w-full p-4 rounded-xl border transition-all text-left ${
-        selected
-          ? "bg-blue-900/30 border-blue-500 ring-2 ring-blue-500"
-          : "bg-gray-800/50 border-gray-700 hover:border-gray-600"
-      }`}
-    >
+        selected ? "bg-blue-900/30 border-blue-500 ring-2 ring-blue-500" : "bg-gray-800/50 border-gray-700 hover:border-gray-600"
+      }`}>
       <div className="flex items-start justify-between">
         <div>
           <p className="text-white font-semibold text-sm">{title}</p>

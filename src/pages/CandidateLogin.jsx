@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { WhitelabelConfig, Candidates } from "@/api/supabaseClient";
 import { Shield, Eye, EyeOff, ArrowLeft } from "lucide-react";
 import { createPageUrl } from "@/utils";
 
@@ -25,28 +25,37 @@ export default function CandidateLogin() {
       return;
     }
 
-    // Verify company code exists
-    const configs = await base44.entities.WhitelabelConfig.filter({ company_code: codeUpper, setup_complete: true }, "-created_date", 1);
-    if (configs.length === 0) {
-      setError("Company code not found. Please check with your administrator.");
-      setLoading(false);
-      return;
+    try {
+      // Verify company code exists and setup is complete
+      const configs = await WhitelabelConfig.list({ company_code: codeUpper, setup_complete: true });
+      if (!configs || configs.length === 0) {
+        setError("Company code not found. Please check with your administrator.");
+        setLoading(false);
+        return;
+      }
+
+      // Find candidate by ID and company code
+      const results = await Candidates.list({ candidate_id: idUpper, company_code: codeUpper });
+      if (!results || results.length === 0) {
+        setError("Candidate not found for this company.");
+        setLoading(false);
+        return;
+      }
+
+      const candidate = results[0];
+      if (candidate.pin !== pin) {
+        setError("Incorrect PIN.");
+        setLoading(false);
+        return;
+      }
+
+      sessionStorage.setItem("secureops_candidate", JSON.stringify(candidate));
+      window.location.href = createPageUrl("Onboarding");
+    } catch (err) {
+      console.error("Login error:", err);
+      setError("An error occurred. Please try again.");
     }
 
-    const results = await base44.entities.Candidate.filter({ candidate_id: idUpper, company_code: codeUpper });
-    if (!results || results.length === 0) {
-      setError("Candidate not found for this company.");
-      setLoading(false);
-      return;
-    }
-    const candidate = results[0];
-    if (candidate.pin !== pin) {
-      setError("Incorrect PIN.");
-      setLoading(false);
-      return;
-    }
-    sessionStorage.setItem("secureops_candidate", JSON.stringify(candidate));
-    window.location.href = createPageUrl("Onboarding");
     setLoading(false);
   };
 
@@ -97,7 +106,11 @@ export default function CandidateLogin() {
               </div>
             </div>
             {error && <p className="text-red-400 text-sm">{error}</p>}
-            <button type="submit" disabled={loading} className="w-full bg-purple-600 hover:bg-purple-700 text-white py-3 rounded-xl font-semibold transition-colors">
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-purple-600 hover:bg-purple-700 text-white py-3 rounded-xl font-semibold transition-colors disabled:opacity-50"
+            >
               {loading ? "Verifying..." : "Enter Portal"}
             </button>
           </form>

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { Officers as OfficersEntity, Sites, Certifications, ClockRecords } from "@/api/supabaseClient";
 import { Plus, Search, X, Phone, Mail, Shield, FileText, Award, Trash2 } from "lucide-react";
 import OfficerRecordTab from "../components/officers/OfficerRecordTab";
 
@@ -40,8 +40,8 @@ export default function Officers() {
     setLoading(true);
     const cc = o?.company_code;
     const [of, s] = await Promise.all([
-      cc ? base44.entities.Officer.filter({ company_code: cc }, "full_name", 200) : base44.entities.Officer.list("full_name", 200),
-      cc ? base44.entities.Site.filter({ status: "active", company_code: cc }, "name", 100) : base44.entities.Site.filter({ status: "active" }, "name", 100),
+      OfficersEntity.list({ company_code: cc }),
+      Sites.list({ status: "active", company_code: cc }),
     ]);
     setOfficers(of);
     setSites(s);
@@ -63,8 +63,8 @@ export default function Officers() {
     setTab("info");
     setShowModal(true);
     const [certs, cr] = await Promise.all([
-      base44.entities.Certification.filter({ officer_id: o.id }, "-created_date", 50),
-      base44.entities.ClockRecord.filter({ officer_id: o.id }, "-clock_in_time", 20),
+      Certifications.list({ officer_id: o.id }),
+      ClockRecords.list({ officer_id: o.id }),
     ]);
     setCertifications(certs);
     setClockRecords(cr);
@@ -72,10 +72,17 @@ export default function Officers() {
 
   const handleSave = async () => {
     if (selected) {
-      await base44.entities.Officer.update(selected.id, form);
+      await OfficersEntity.update(selected.id, form);
     } else {
-      await base44.entities.Officer.create(form);
+      await OfficersEntity.create(form);
     }
+    setShowModal(false);
+    loadOfficers(officer);
+  };
+
+  const handleDelete = async () => {
+    if (!window.confirm(`Permanently delete officer "${selected.full_name}"? This cannot be undone.`)) return;
+    await OfficersEntity.delete(selected.id);
     setShowModal(false);
     loadOfficers(officer);
   };
@@ -84,8 +91,6 @@ export default function Officers() {
     loadOfficers(officer);
     setShowModal(false);
   };
-
-
 
   const activeOfficers = officers.filter(o => ["active", "suspended"].includes(o.status));
   const terminatedOfficers = officers.filter(o => o.status === "inactive");
@@ -170,7 +175,8 @@ export default function Officers() {
                 { key: "hours", label: "Hours" },
                 ...(selected ? [{ key: "certifications", label: "Certifications" }, { key: "record", label: "Record" }] : []),
               ].map(t => (
-                <button key={t.key} onClick={() => setTab(t.key)} className={`px-4 py-3 text-sm whitespace-nowrap flex items-center gap-1.5 ${tab === t.key ? "text-blue-400 border-b-2 border-blue-500" : "text-gray-500 hover:text-gray-300"}`}>
+                <button key={t.key} onClick={() => setTab(t.key)}
+                  className={`px-4 py-3 text-sm whitespace-nowrap flex items-center gap-1.5 ${tab === t.key ? "text-blue-400 border-b-2 border-blue-500" : "text-gray-500 hover:text-gray-300"}`}>
                   {t.key === "certifications" && <Award className="w-3.5 h-3.5" />}
                   {t.key === "record" && <FileText className="w-3.5 h-3.5" />}
                   {t.label}
@@ -263,7 +269,8 @@ export default function Officers() {
                         <span>Expires: {c.expiration_date || "–"}</span>
                       </div>
                       {c.file_url && (
-                        <a href={c.file_url} target="_blank" rel="noopener noreferrer" className="mt-2 flex items-center gap-1 text-blue-400 text-xs hover:underline">
+                        <a href={c.file_url} target="_blank" rel="noopener noreferrer"
+                          className="mt-2 flex items-center gap-1 text-blue-400 text-xs hover:underline">
                           <FileText className="w-3 h-3" /> View Document
                         </a>
                       )}
@@ -285,12 +292,8 @@ export default function Officers() {
               <div className="flex items-center justify-between gap-3 p-5 border-t border-gray-800">
                 <div>
                   {selected && officer?.role === "admin" && (
-                    <button onClick={async () => {
-                      if (!window.confirm(`Permanently delete officer "${selected.full_name}"? This cannot be undone.`)) return;
-                      await base44.entities.Officer.delete(selected.id);
-                      setShowModal(false);
-                      loadOfficers(officer);
-                    }} className="flex items-center gap-1 px-3 py-2 bg-red-900/30 hover:bg-red-900/50 text-red-400 rounded-xl text-sm">
+                    <button onClick={handleDelete}
+                      className="flex items-center gap-1 px-3 py-2 bg-red-900/30 hover:bg-red-900/50 text-red-400 rounded-xl text-sm">
                       <Trash2 className="w-4 h-4" /> Delete
                     </button>
                   )}

@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { base44 } from "@/api/base44Client";
-import { Upload, File, CheckCircle, Trash2 } from "lucide-react";
+import { uploadFile, getSignedUrl } from "@/api/supabaseClient";
+import { File, CheckCircle, Trash2 } from "lucide-react";
 
 const DOC_TYPES = [
   { id: "id_front", label: "Government ID (Front)" },
@@ -11,18 +11,32 @@ const DOC_TYPES = [
   { id: "other", label: "Other Document" },
 ];
 
-export default function DocumentUploader({ record, onUpdate }) {
+// candidateId is required to namespace files per candidate
+export default function DocumentUploader({ record, candidateId, onUpdate }) {
   const [uploading, setUploading] = useState({});
   const [docs, setDocs] = useState(record?.documents_uploaded || []);
 
   const handleUpload = async (docType, file) => {
     setUploading(u => ({ ...u, [docType]: true }));
-    const { file_url } = await base44.integrations.Core.UploadFile({ file });
-    const newDoc = { type: docType, label: DOC_TYPES.find(d => d.id === docType)?.label, file_url, file_name: file.name, uploaded_at: new Date().toISOString() };
+    const ext = file.name.split(".").pop();
+    const path = `${candidateId}/${docType}_${Date.now()}.${ext}`;
+    const storagePath = await uploadFile("onboarding-docs", file, path);
+    const newDoc = {
+      type: docType,
+      label: DOC_TYPES.find(d => d.id === docType)?.label,
+      storage_path: storagePath,
+      file_name: file.name,
+      uploaded_at: new Date().toISOString(),
+    };
     const updated = [...docs.filter(d => d.type !== docType), newDoc];
     setDocs(updated);
     await onUpdate({ documents_uploaded: updated });
     setUploading(u => ({ ...u, [docType]: false }));
+  };
+
+  const handleView = async (doc) => {
+    const url = await getSignedUrl("onboarding-docs", doc.storage_path);
+    window.open(url, "_blank");
   };
 
   const removeDoc = async (docType) => {
@@ -44,7 +58,11 @@ export default function DocumentUploader({ record, onUpdate }) {
                 {existing ? <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0" /> : <File className="w-5 h-5 text-gray-500 flex-shrink-0" />}
                 <div>
                   <p className="text-white text-sm font-medium">{dt.label}</p>
-                  {existing && <p className="text-gray-500 text-xs truncate max-w-[180px]">{existing.file_name}</p>}
+                  {existing && (
+                    <button onClick={() => handleView(existing)} className="text-gray-500 text-xs hover:text-blue-400 truncate max-w-[180px] text-left">
+                      {existing.file_name} ↗
+                    </button>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-2">

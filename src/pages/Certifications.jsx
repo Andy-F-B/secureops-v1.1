@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { Certifications as CertsEntity, Officers as OfficersEntity } from "@/api/supabaseClient";
+import { uploadFile } from "@/api/supabaseClient";
 import { Award, Plus, X, Upload, AlertTriangle, Check, Trash2 } from "lucide-react";
 import { format, differenceInDays } from "date-fns";
 
@@ -28,8 +29,12 @@ export default function Certifications() {
     setLoading(true);
     const isAdmin = o.role === "admin" || o.role === "supervisor";
     const [c, of] = await Promise.all([
-      isAdmin ? base44.entities.Certification.list("-created_date", 200) : base44.entities.Certification.filter({ officer_id: o.id }, "-created_date"),
-      isAdmin ? base44.entities.Officer.filter({ status: "active" }, "full_name") : Promise.resolve([]),
+      isAdmin
+        ? CertsEntity.list({ company_code: o.company_code })
+        : CertsEntity.list({ officer_id: o.id }),
+      isAdmin
+        ? OfficersEntity.list({ status: "active", company_code: o.company_code })
+        : Promise.resolve([]),
     ]);
     setCerts(c);
     setOfficers(of);
@@ -40,16 +45,23 @@ export default function Certifications() {
     const file = e.target.files[0];
     if (!file) return;
     setUploading(true);
-    const { file_url } = await base44.integrations.Core.UploadFile({ file });
-    setForm(f => ({ ...f, file_url }));
+    try {
+      const path = `${officer.id}/${Date.now()}_${file.name}`;
+      const file_url = await uploadFile("certifications", file, path);
+      setForm(f => ({ ...f, file_url }));
+    } catch (err) {
+      console.error("Upload failed:", err);
+      alert("File upload failed. Please try again.");
+    }
     setUploading(false);
   };
 
   const handleCreate = async () => {
-    await base44.entities.Certification.create({
+    await CertsEntity.create({
       ...form,
       officer_id: officer.id,
       officer_name: officer.full_name,
+      company_code: officer.company_code,
       status: "pending",
     });
     setShowModal(false);
@@ -57,13 +69,13 @@ export default function Certifications() {
   };
 
   const approveOrReject = async (cert, status) => {
-    await base44.entities.Certification.update(cert.id, { status, approved_by: officer.full_name });
+    await CertsEntity.update(cert.id, { status, approved_by: officer.full_name });
     loadData(officer);
   };
 
   const deleteCert = async (cert) => {
     if (!window.confirm(`Delete certification "${cert.title || cert.type}"?`)) return;
-    await base44.entities.Certification.delete(cert.id);
+    await CertsEntity.delete(cert.id);
     loadData(officer);
   };
 
@@ -84,20 +96,27 @@ export default function Certifications() {
     return true;
   });
 
-  if (loading) return <div className="flex items-center justify-center h-64"><p className="text-gray-400">Loading certifications...</p></div>;
+  if (loading) return (
+    <div className="flex items-center justify-center h-64">
+      <p className="text-gray-400">Loading certifications...</p>
+    </div>
+  );
 
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div className="flex gap-2">
           {["all", "pending", "expiring", "expired"].map(f => (
-            <button key={f} onClick={() => setFilter(f)} className={`text-sm px-3 py-1.5 rounded-lg capitalize ${filter === f ? "bg-blue-600 text-white" : "bg-gray-900 text-gray-400 border border-gray-800 hover:text-white"}`}>
+            <button key={f} onClick={() => setFilter(f)}
+              className={`text-sm px-3 py-1.5 rounded-lg capitalize ${filter === f ? "bg-blue-600 text-white" : "bg-gray-900 text-gray-400 border border-gray-800 hover:text-white"}`}>
               {f}
             </button>
           ))}
         </div>
-        <button onClick={() => { setForm({ type: "guard_license" }); setShowModal(true); }}
-          className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm">
+        <button
+          onClick={() => { setForm({ type: "guard_license" }); setShowModal(true); }}
+          className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm"
+        >
           <Plus className="w-4 h-4" /> Upload Cert
         </button>
       </div>
@@ -119,33 +138,44 @@ export default function Certifications() {
                 <span className={`text-xs px-2 py-1 rounded-full ${
                   cert.status === "approved" ? "bg-green-900/50 text-green-400" :
                   cert.status === "rejected" ? "bg-red-900/50 text-red-400" :
-                  cert.status === "expired" ? "bg-gray-700 text-gray-400" : "bg-yellow-900/50 text-yellow-400"
+                  cert.status === "expired" ? "bg-gray-700 text-gray-400" :
+                  "bg-yellow-900/50 text-yellow-400"
                 }`}>{cert.status}</span>
               </div>
               <h3 className="text-white font-semibold">{cert.title || cert.type?.replace("_", " ")}</h3>
               {isAdmin && <p className="text-gray-400 text-sm mt-1">{cert.officer_name}</p>}
               <p className="text-gray-500 text-xs mt-1 capitalize">{cert.type?.replace(/_/g, " ")}</p>
               {cert.expiration_date && (
-                <div className={`flex items-center gap-1 mt-2 text-xs ${isExpired ? "text-red-400" : isExpiringSoon ? "text-yellow-400" : "text-gray-500"}`}>
+                <div className={`flex items-center gap-1 mt-2 text-xs ${
+                  isExpired ? "text-red-400" : isExpiringSoon ? "text-yellow-400" : "text-gray-500"
+                }`}>
                   {(isExpiringSoon || isExpired) && <AlertTriangle className="w-3 h-3" />}
-                  {isExpired ? `Expired ${Math.abs(days)}d ago` : `Expires in ${days}d (${cert.expiration_date})`}
+                  {isExpired
+                    ? `Expired ${Math.abs(days)}d ago`
+                    : `Expires in ${days}d (${cert.expiration_date})`}
                 </div>
               )}
               {cert.file_url && (
-                <a href={cert.file_url} target="_blank" className="text-blue-400 text-xs hover:underline mt-2 block">View document</a>
+                <a href={cert.file_url} target="_blank" rel="noreferrer"
+                  className="text-blue-400 text-xs hover:underline mt-2 block">
+                  View document
+                </a>
               )}
               {isAdmin && cert.status === "pending" && (
                 <div className="flex gap-2 mt-3">
-                  <button onClick={() => approveOrReject(cert, "approved")} className="flex-1 bg-green-800 hover:bg-green-700 text-green-300 text-xs py-1.5 rounded-lg flex items-center justify-center gap-1">
+                  <button onClick={() => approveOrReject(cert, "approved")}
+                    className="flex-1 bg-green-800 hover:bg-green-700 text-green-300 text-xs py-1.5 rounded-lg flex items-center justify-center gap-1">
                     <Check className="w-3 h-3" /> Approve
                   </button>
-                  <button onClick={() => approveOrReject(cert, "rejected")} className="flex-1 bg-red-900/50 hover:bg-red-800 text-red-400 text-xs py-1.5 rounded-lg flex items-center justify-center gap-1">
+                  <button onClick={() => approveOrReject(cert, "rejected")}
+                    className="flex-1 bg-red-900/50 hover:bg-red-800 text-red-400 text-xs py-1.5 rounded-lg flex items-center justify-center gap-1">
                     <X className="w-3 h-3" /> Reject
                   </button>
                 </div>
               )}
               {officer?.role === "admin" && (
-                <button onClick={() => deleteCert(cert)} className="mt-2 w-full flex items-center justify-center gap-1 text-xs text-red-500 hover:text-red-400 py-1">
+                <button onClick={() => deleteCert(cert)}
+                  className="mt-2 w-full flex items-center justify-center gap-1 text-xs text-red-500 hover:text-red-400 py-1">
                   <Trash2 className="w-3 h-3" /> Delete
                 </button>
               )}
@@ -177,12 +207,14 @@ export default function Certifications() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-gray-400 text-sm block mb-1">Issue Date</label>
-                  <input type="date" value={form.issue_date || ""} onChange={e => setForm(f => ({ ...f, issue_date: e.target.value }))}
+                  <input type="date" value={form.issue_date || ""}
+                    onChange={e => setForm(f => ({ ...f, issue_date: e.target.value }))}
                     className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white" />
                 </div>
                 <div>
                   <label className="text-gray-400 text-sm block mb-1">Expiration Date</label>
-                  <input type="date" value={form.expiration_date || ""} onChange={e => setForm(f => ({ ...f, expiration_date: e.target.value }))}
+                  <input type="date" value={form.expiration_date || ""}
+                    onChange={e => setForm(f => ({ ...f, expiration_date: e.target.value }))}
                     className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white" />
                 </div>
               </div>
@@ -190,14 +222,19 @@ export default function Certifications() {
                 <label className="text-gray-400 text-sm block mb-2">Document</label>
                 <label className="flex items-center gap-2 cursor-pointer bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 hover:border-blue-500">
                   <Upload className="w-4 h-4 text-gray-400" />
-                  <span className="text-gray-400 text-sm">{uploading ? "Uploading..." : form.file_url ? "File uploaded ✓" : "Choose file..."}</span>
+                  <span className="text-gray-400 text-sm">
+                    {uploading ? "Uploading..." : form.file_url ? "File uploaded ✓" : "Choose file..."}
+                  </span>
                   <input type="file" className="hidden" onChange={handleFileUpload} accept=".pdf,.jpg,.jpeg,.png" />
                 </label>
               </div>
             </div>
             <div className="flex justify-end gap-3 p-5 border-t border-gray-800">
               <button onClick={() => setShowModal(false)} className="px-4 py-2 bg-gray-800 text-gray-300 rounded-xl text-sm">Cancel</button>
-              <button onClick={handleCreate} disabled={uploading} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm disabled:opacity-50">Submit</button>
+              <button onClick={handleCreate} disabled={uploading}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm disabled:opacity-50">
+                Submit
+              </button>
             </div>
           </div>
         </div>

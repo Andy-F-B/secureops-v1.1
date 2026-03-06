@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { Events as EventsEntity, Sites, Officers as OfficersEntity, ClockRecords, Shifts, Messages } from "@/api/supabaseClient";
 import { Plus, X, Star, Archive, DollarSign, Clock, Users, CheckCircle, XCircle, Pencil, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 import PlanOfAction from "../components/events/PlanOfAction";
@@ -33,9 +33,9 @@ export default function Events() {
   const loadData = async (o_ref) => {
     const cc = (o_ref || officer)?.company_code;
     const [e, s, o] = await Promise.all([
-      cc ? base44.entities.Event.filter({ company_code: cc }, "-start_date", 100) : base44.entities.Event.list("-start_date", 100),
-      cc ? base44.entities.Site.filter({ status: "active", company_code: cc }, "name") : base44.entities.Site.filter({ status: "active" }, "name"),
-      cc ? base44.entities.Officer.filter({ status: "active", company_code: cc }, "full_name") : base44.entities.Officer.filter({ status: "active" }, "full_name"),
+      EventsEntity.list({ company_code: cc }),
+      Sites.list({ status: "active", company_code: cc }),
+      OfficersEntity.list({ status: "active", company_code: cc }),
     ]);
     setEvents(e);
     setSites(s);
@@ -50,7 +50,7 @@ export default function Events() {
   const handleCreate = async () => {
     setCreating(true);
     const site = sites.find(s => s.id === form.site_id);
-    await base44.entities.Event.create({ ...form, site_name: site?.name || "", company_code: officer?.company_code });
+    await EventsEntity.create({ ...form, site_name: site?.name || "", company_code: officer?.company_code });
     setShowCreate(false);
     setCreating(false);
     loadData();
@@ -60,15 +60,15 @@ export default function Events() {
     setSelected(ev);
     setTab("overview");
     const [cr, shifts] = await Promise.all([
-      base44.entities.ClockRecord.filter({ event_id: ev.id }, "officer_name", 100),
-      base44.entities.Shift.filter({ event_id: ev.id }, "date", 100),
+      ClockRecords.list({ event_id: ev.id }),
+      Shifts.list({ event_id: ev.id }),
     ]);
     setClockRecords(cr);
     setEventShifts(shifts);
   };
 
   const updateEvent = async (data) => {
-    await base44.entities.Event.update(selected.id, data);
+    await EventsEntity.update(selected.id, data);
     setSelected(prev => ({ ...prev, ...data }));
     loadData();
   };
@@ -80,7 +80,7 @@ export default function Events() {
 
   const deleteEvent = async () => {
     if (!window.confirm(`Delete event "${selected.name}"? This cannot be undone.`)) return;
-    await base44.entities.Event.delete(selected.id);
+    await EventsEntity.delete(selected.id);
     setSelected(null);
     loadData();
   };
@@ -95,10 +95,10 @@ export default function Events() {
   };
 
   const saveShift = async () => {
-    await base44.entities.Shift.update(editShift.id, { ...shiftForm, shift_confirmation: {} });
+    await Shifts.update(editShift.id, { ...shiftForm, shift_confirmation: {} });
     const officerNames = (shiftForm.assigned_officers || [])
       .map(id => officers.find(o => o.id === id)?.full_name || id).join(", ");
-    await base44.entities.Message.create({
+    await Messages.create({
       sender_id: "system",
       sender_name: "SecureOps",
       channel: "broadcast",
@@ -107,7 +107,7 @@ export default function Events() {
       company_code: officer?.company_code,
     });
     setEditShift(null);
-    const shifts = await base44.entities.Shift.filter({ event_id: selected.id }, "date", 100);
+    const shifts = await Shifts.list({ event_id: selected.id });
     setEventShifts(shifts);
   };
 
@@ -116,9 +116,9 @@ export default function Events() {
     const me = stored ? JSON.parse(stored) : null;
     if (!me) return;
     const updated = { ...(shift.shift_confirmation || {}), [me.id]: { response, reason, name: me.full_name } };
-    await base44.entities.Shift.update(shift.id, { shift_confirmation: updated });
+    await Shifts.update(shift.id, { shift_confirmation: updated });
     if (response === "denied") {
-      await base44.entities.Message.create({
+      await Messages.create({
         sender_id: me.id,
         sender_name: me.full_name,
         channel: "broadcast",
@@ -127,11 +127,20 @@ export default function Events() {
         company_code: me.company_code,
       });
     }
-    const shifts = await base44.entities.Shift.filter({ event_id: selected.id }, "date", 100);
+    const shifts = await Shifts.list({ event_id: selected.id });
     setEventShifts(shifts);
   };
 
-  const filtered = events.filter(e => filter === "all" ? true : e.status === filter || (filter === "active" && ["upcoming", "active"].includes(e.status)));
+  const deleteShift = async (shift) => {
+    if (!window.confirm("Delete this shift?")) return;
+    await Shifts.delete(shift.id);
+    const shifts = await Shifts.list({ event_id: selected.id });
+    setEventShifts(shifts);
+  };
+
+  const filtered = events.filter(e =>
+    filter === "all" ? true : e.status === filter || (filter === "active" && ["upcoming", "active"].includes(e.status))
+  );
 
   const totalBilling = clockRecords.reduce((sum, r) => {
     const rate = selected?.billing_rate || 0;
@@ -184,7 +193,8 @@ export default function Events() {
 
           <div className="flex border-b border-gray-800 mb-5 overflow-x-auto">
             {["overview", "schedule", "hours", "reports"].map(t => (
-              <button key={t} onClick={() => setTab(t)} className={`px-4 py-2.5 text-sm capitalize whitespace-nowrap ${tab === t ? "text-blue-400 border-b-2 border-blue-500" : "text-gray-500 hover:text-gray-300"}`}>
+              <button key={t} onClick={() => setTab(t)}
+                className={`px-4 py-2.5 text-sm capitalize whitespace-nowrap ${tab === t ? "text-blue-400 border-b-2 border-blue-500" : "text-gray-500 hover:text-gray-300"}`}>
                 {t}
               </button>
             ))}
@@ -223,14 +233,16 @@ export default function Events() {
                     event={selected}
                     officers={officers}
                     onShiftsCreated={async () => {
-                      const shifts = await base44.entities.Shift.filter({ event_id: selected.id }, "date", 100);
+                      const shifts = await Shifts.list({ event_id: selected.id });
                       setEventShifts(shifts);
                     }}
                   />
                 )}
               </div>
               {eventShifts.length === 0 && (
-                <p className="text-gray-500 text-sm">No shifts yet. {isAdmin ? "Use \"Create Schedule\" to build the schedule day by day." : ""}</p>
+                <p className="text-gray-500 text-sm">
+                  No shifts yet. {isAdmin ? "Use \"Create Schedule\" to build the schedule day by day." : ""}
+                </p>
               )}
               <div className="space-y-3">
                 {eventShifts.map(shift => {
@@ -249,12 +261,7 @@ export default function Events() {
                               <Pencil className="w-4 h-4" />
                             </button>
                             {officer?.role === "admin" && (
-                              <button onClick={async () => {
-                                if (!window.confirm("Delete this shift?")) return;
-                                await base44.entities.Shift.delete(shift.id);
-                                const shifts = await base44.entities.Shift.filter({ event_id: selected.id }, "date", 100);
-                                setEventShifts(shifts);
-                              }} className="text-red-500 hover:text-red-400">
+                              <button onClick={() => deleteShift(shift)} className="text-red-500 hover:text-red-400">
                                 <Trash2 className="w-4 h-4" />
                               </button>
                             )}
@@ -269,7 +276,9 @@ export default function Events() {
                             <div key={oid} className="flex items-center justify-between text-sm">
                               <span className="text-gray-300">{o?.full_name || oid}</span>
                               {conf ? (
-                                <span className={`text-xs px-2 py-0.5 rounded-full flex items-center gap-1 ${conf.response === "confirmed" ? "bg-green-900/40 text-green-400" : "bg-red-900/40 text-red-400"}`}>
+                                <span className={`text-xs px-2 py-0.5 rounded-full flex items-center gap-1 ${
+                                  conf.response === "confirmed" ? "bg-green-900/40 text-green-400" : "bg-red-900/40 text-red-400"
+                                }`}>
                                   {conf.response === "confirmed" ? <CheckCircle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
                                   {conf.response}{conf.reason ? ` — ${conf.reason}` : ""}
                                 </span>
@@ -282,9 +291,14 @@ export default function Events() {
                       </div>
                       {shift.assigned_officers?.includes(myId) && !isAdmin && (
                         myConfirmation ? (
-                          <p className="text-xs text-gray-500">You responded: <span className={myConfirmation.response === "confirmed" ? "text-green-400" : "text-red-400"}>{myConfirmation.response}</span></p>
+                          <p className="text-xs text-gray-500">
+                            You responded: <span className={myConfirmation.response === "confirmed" ? "text-green-400" : "text-red-400"}>{myConfirmation.response}</span>
+                          </p>
                         ) : (
-                          <ShiftResponseButtons onConfirm={() => respondToShift(shift, "confirmed")} onDeny={(reason) => respondToShift(shift, "denied", reason)} />
+                          <ShiftResponseButtons
+                            onConfirm={() => respondToShift(shift, "confirmed")}
+                            onDeny={(reason) => respondToShift(shift, "denied", reason)}
+                          />
                         )
                       )}
                     </div>
@@ -323,7 +337,9 @@ export default function Events() {
                           <td className="text-right text-yellow-400">{otHours > 0 ? otHours.toFixed(2) : "–"}</td>
                           <td className="text-right">${rate}/hr</td>
                           <td className="text-right text-green-400">${total.toFixed(2)}</td>
-                          <td className="text-right"><span className={`text-xs ${r.status === "approved" ? "text-green-400" : "text-gray-500"}`}>{r.status}</span></td>
+                          <td className="text-right">
+                            <span className={`text-xs ${r.status === "approved" ? "text-green-400" : "text-gray-500"}`}>{r.status}</span>
+                          </td>
                         </tr>
                       );
                     })}
@@ -360,7 +376,8 @@ export default function Events() {
                   {(selected.incident_reports || []).map((report, i) => (
                     <div key={i} className="bg-gray-800 rounded-xl p-4">
                       <p className="text-gray-400 text-xs mb-2">{report.date} • {report.reported_by}</p>
-                      <textarea value={report.description}
+                      <textarea
+                        value={report.description}
                         onChange={e => {
                           const reports = [...(selected.incident_reports || [])];
                           reports[i] = { ...reports[i], description: e.target.value };
@@ -368,7 +385,8 @@ export default function Events() {
                         }}
                         onBlur={() => updateEvent({ incident_reports: selected.incident_reports })}
                         className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-gray-300 resize-none focus:outline-none text-sm"
-                        rows={3} placeholder="Describe the incident..." />
+                        rows={3} placeholder="Describe the incident..."
+                      />
                     </div>
                   ))}
                 </div>
@@ -381,7 +399,10 @@ export default function Events() {
           <div className="flex items-center justify-between">
             <div className="flex gap-2 flex-wrap">
               {["active", "completed", "archived", "all"].map(f => (
-                <button key={f} onClick={() => setFilter(f)} className={`text-sm px-3 py-1.5 rounded-lg capitalize ${filter === f ? "bg-blue-600 text-white" : "bg-gray-900 text-gray-400 hover:text-white border border-gray-800"}`}>{f}</button>
+                <button key={f} onClick={() => setFilter(f)}
+                  className={`text-sm px-3 py-1.5 rounded-lg capitalize ${filter === f ? "bg-blue-600 text-white" : "bg-gray-900 text-gray-400 hover:text-white border border-gray-800"}`}>
+                  {f}
+                </button>
               ))}
             </div>
             <button onClick={openCreate} className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm">
@@ -390,7 +411,8 @@ export default function Events() {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {filtered.map(ev => (
-              <div key={ev.id} onClick={() => openEvent(ev)} className="bg-gray-900 border border-gray-800 rounded-2xl p-5 cursor-pointer hover:border-blue-700 transition-colors">
+              <div key={ev.id} onClick={() => openEvent(ev)}
+                className="bg-gray-900 border border-gray-800 rounded-2xl p-5 cursor-pointer hover:border-blue-700 transition-colors">
                 <div className="flex items-start justify-between mb-3">
                   <Star className="w-5 h-5 text-blue-400 mt-0.5" />
                   <span className={`text-xs px-2 py-1 rounded-full ${statusColor[ev.status]}`}>{ev.status}</span>
@@ -419,18 +441,21 @@ export default function Events() {
             <div className="p-5 space-y-4">
               <div>
                 <label className="text-gray-400 text-sm block mb-1">Date</label>
-                <input type="date" value={shiftForm.date || ""} onChange={e => setShiftForm(f => ({ ...f, date: e.target.value }))}
+                <input type="date" value={shiftForm.date || ""}
+                  onChange={e => setShiftForm(f => ({ ...f, date: e.target.value }))}
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white" />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-gray-400 text-sm block mb-1">Start Time</label>
-                  <input type="time" value={shiftForm.start_time || ""} onChange={e => setShiftForm(f => ({ ...f, start_time: e.target.value }))}
+                  <input type="time" value={shiftForm.start_time || ""}
+                    onChange={e => setShiftForm(f => ({ ...f, start_time: e.target.value }))}
                     className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white" />
                 </div>
                 <div>
                   <label className="text-gray-400 text-sm block mb-1">End Time</label>
-                  <input type="time" value={shiftForm.end_time || ""} onChange={e => setShiftForm(f => ({ ...f, end_time: e.target.value }))}
+                  <input type="time" value={shiftForm.end_time || ""}
+                    onChange={e => setShiftForm(f => ({ ...f, end_time: e.target.value }))}
                     className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white" />
                 </div>
               </div>
@@ -487,7 +512,6 @@ export default function Events() {
                 <EField label="Billing Rate ($/hr)" value={form.billing_rate} onChange={v => setForm(f => ({ ...f, billing_rate: parseFloat(v) }))} type="number" />
                 <EField label="OT Multiplier" value={form.overtime_multiplier} onChange={v => setForm(f => ({ ...f, overtime_multiplier: parseFloat(v) }))} type="number" />
               </div>
-
               <div className="bg-blue-900/20 border border-blue-800/40 rounded-lg p-3 text-xs text-blue-300">
                 ✓ After creating the event, go to the Schedule tab to build day-by-day shifts.<br />
                 ✓ A group chat will be sent when you finalize the schedule.

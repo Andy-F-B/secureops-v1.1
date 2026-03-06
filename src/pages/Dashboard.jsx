@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { Shifts, ClockRecords, Officers as OfficersEntity, Candidates } from "@/api/supabaseClient";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { Clock, Users, AlertTriangle, Calendar, CheckCircle, TrendingUp, MapPin, Bell, MessageSquare, UserCheck, UserX } from "lucide-react";
-import { format, startOfWeek, endOfWeek, isToday } from "date-fns";
+import { format } from "date-fns";
 
 export default function Dashboard() {
   const [officer, setOfficer] = useState(null);
@@ -28,18 +28,17 @@ export default function Dashboard() {
 
     if (["admin", "supervisor"].includes(o.role)) {
       const [s, cr, officers] = await Promise.all([
-        cc ? base44.entities.Shift.filter({ status: "scheduled", company_code: cc }, "-date", 20) : base44.entities.Shift.filter({ status: "scheduled" }, "-date", 20),
-        cc ? base44.entities.ClockRecord.filter({ status: "clocked_in", company_code: cc }, "-created_date", 50) : base44.entities.ClockRecord.filter({ status: "clocked_in" }, "-created_date", 50),
-        cc ? base44.entities.Officer.filter({ status: "active", company_code: cc }, "full_name", 100) : base44.entities.Officer.filter({ status: "active" }, "full_name", 100),
+        Shifts.list({ status: "scheduled", company_code: cc }),
+        ClockRecords.list({ status: "clocked_in", company_code: cc }),
+        OfficersEntity.list({ status: "active", company_code: cc }),
       ]);
       setShifts(s);
       setClockRecords(cr);
       setAllOfficers(officers);
     }
+
     if (["admin", "hr"].includes(o.role)) {
-      const cands = cc
-        ? await base44.entities.Candidate.filter({ company_code: cc }, "-created_date", 100)
-        : await base44.entities.Candidate.list("-created_date", 100);
+      const cands = await Candidates.list({ company_code: cc });
       const pending = cands.filter(c => ["pending", "in_progress", "completed"].includes(c.onboarding_status));
       const approved = cands.filter(c => c.onboarding_status === "approved").slice(0, 3);
       const denied = cands.filter(c => c.onboarding_status === "denied").slice(0, 3);
@@ -50,15 +49,15 @@ export default function Dashboard() {
       ];
       setHrNotifications(notifs.slice(0, 8));
     }
+
     if (!["admin", "supervisor"].includes(o.role)) {
-      const s = cc
-        ? await base44.entities.Shift.filter({ company_code: cc }, "-date", 10)
-        : await base44.entities.Shift.list("-date", 10);
+      const s = await Shifts.list({ company_code: cc });
       const mine = s.filter(sh => sh.assigned_officers?.includes(o.id));
       setShifts(mine);
-      const cr = await base44.entities.ClockRecord.filter({ officer_id: o.id }, "-clock_in_time", 20);
+      const cr = await ClockRecords.list({ officer_id: o.id });
       setClockRecords(cr);
     }
+
     setLoading(false);
   };
 
@@ -145,17 +144,23 @@ export default function Dashboard() {
                 <div key={r.id} className="flex items-center justify-between p-3 bg-gray-800 rounded-xl">
                   <div>
                     <p className="text-white text-sm font-medium">{isAdmin ? r.officer_name : r.site_name}</p>
-                    <p className="text-gray-400 text-xs">In: {r.clock_in_time ? format(new Date(r.clock_in_time), "HH:mm") : "–"}</p>
+                    <p className="text-gray-400 text-xs">
+                      In: {r.clock_in_time ? format(new Date(r.clock_in_time), "HH:mm") : "–"}
+                    </p>
                   </div>
                   <span className={`text-xs px-2 py-1 rounded-full ${
                     r.status === "clocked_in" ? "bg-green-900/50 text-green-400" :
-                    r.status === "approved" ? "bg-blue-900/50 text-blue-400" : "bg-gray-700 text-gray-300"
+                    r.status === "approved" ? "bg-blue-900/50 text-blue-400" :
+                    "bg-gray-700 text-gray-300"
                   }`}>{r.status?.replace("_", " ")}</span>
                 </div>
               ))}
             </div>
           )}
-          <Link to={createPageUrl(isAdmin ? "Timesheets" : "ClockIn")} className="mt-4 block text-blue-400 text-sm hover:underline">
+          <Link
+            to={createPageUrl(isAdmin ? "Timesheets" : "ClockIn")}
+            className="mt-4 block text-blue-400 text-sm hover:underline"
+          >
             {isAdmin ? "Manage timesheets →" : "Go to Clock In →"}
           </Link>
         </div>

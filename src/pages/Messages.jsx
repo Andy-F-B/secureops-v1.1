@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { base44 } from "@/api/base44Client";
+import { Messages as MessagesEntity, Officers as OfficersEntity, Sites, Candidates } from "@/api/supabaseClient";
 import { Send, MessageSquare, Users, Megaphone, UserCircle } from "lucide-react";
 import { format } from "date-fns";
 
@@ -30,22 +30,9 @@ export default function Messages() {
     }
   }, []);
 
-  useEffect(() => {
-    const unsubscribe = base44.entities.Message.subscribe((event) => {
-      if (event.type === "create") {
-        setMessages(prev => [...prev, event.data]);
-        // Update unread counts for candidate chats
-        const msg = event.data;
-        if (msg.channel === "direct" && msg.site_id?.startsWith("cand_")) {
-          const candId = msg.site_id.replace("cand_", "");
-          if (msg.sender_id !== officer?.id) {
-            setUnreadCounts(prev => ({ ...prev, [candId]: (prev[candId] || 0) + 1 }));
-          }
-        }
-      }
-    });
-    return unsubscribe;
-  }, [officer]);
+  // Note: Base44's real-time subscribe is not available in Supabase client helper.
+  // For real-time updates, set up a Supabase channel subscription here if needed,
+  // or rely on manual refresh via loadData after sends.
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -54,30 +41,25 @@ export default function Messages() {
   const loadData = async (o) => {
     const cc = o?.company_code;
     const [m, of, si] = await Promise.all([
-      cc ? base44.entities.Message.filter({ company_code: cc }, "-created_date", 100) : base44.entities.Message.list("-created_date", 100),
-      cc ? base44.entities.Officer.filter({ status: "active", company_code: cc }, "full_name") : base44.entities.Officer.filter({ status: "active" }, "full_name"),
-      cc ? base44.entities.Site.filter({ status: "active", company_code: cc }, "name") : base44.entities.Site.filter({ status: "active" }, "name"),
+      MessagesEntity.list({ company_code: cc }),
+      OfficersEntity.list({ status: "active", company_code: cc }),
+      Sites.list({ status: "active", company_code: cc }),
     ]);
-    setMessages(m.reverse());
+    setMessages([...m].reverse());
     setOfficers(of.filter(x => x.id !== o.id));
     setSites(si);
 
     if (isHR(o)) {
-      const cc = o?.company_code;
-      const cands = cc
-        ? await base44.entities.Candidate.filter({ company_code: cc }, "-created_date", 100)
-        : await base44.entities.Candidate.list("-created_date", 100);
+      const cands = await Candidates.list({ company_code: cc });
       setCandidates(cands);
 
-      // Load all candidate chat messages & compute unread per candidate
-      const allCandMsgs = await base44.entities.Message.filter({ channel: "direct" }, "-created_date", 500);
+      const allCandMsgs = await MessagesEntity.list({ channel: "direct", company_code: cc });
       const chatMap = {};
       const unread = {};
       for (const cand of cands) {
         const key = `cand_${cand.id}`;
         const msgs = allCandMsgs.filter(msg => msg.site_id === key).reverse();
         chatMap[cand.id] = msgs;
-        // Count messages from candidate (not from HR/officer) that aren't read by current officer
         const unreadCount = msgs.filter(msg => msg.sender_id === cand.id && !(msg.read_by || []).includes(o.id)).length;
         if (unreadCount > 0) unread[cand.id] = unreadCount;
       }
@@ -88,17 +70,17 @@ export default function Messages() {
 
   const openCandidateChat = async (candId) => {
     setSelectedCandId(candId);
-    // Mark as read
     setUnreadCounts(prev => ({ ...prev, [candId]: 0 }));
-    const msgs = await base44.entities.Message.filter({ site_id: `cand_${candId}`, channel: "direct" }, "created_date", 100);
+    const msgs = await MessagesEntity.list({ site_id: `cand_${candId}`, channel: "direct" });
     setCandidateChats(prev => ({ ...prev, [candId]: msgs }));
   };
 
   const send = async () => {
     if (!text.trim()) return;
     setSending(true);
+
     if (channel === "candidates" && selectedCandId) {
-      await base44.entities.Message.create({
+      await MessagesEntity.create({
         sender_id: officer.id,
         sender_name: officer.full_name,
         site_id: `cand_${selectedCandId}`,
@@ -109,11 +91,12 @@ export default function Messages() {
       });
       setText("");
       setSending(false);
-      const msgs = await base44.entities.Message.filter({ site_id: `cand_${selectedCandId}`, channel: "direct" }, "created_date", 100);
+      const msgs = await MessagesEntity.list({ site_id: `cand_${selectedCandId}`, channel: "direct" });
       setCandidateChats(prev => ({ ...prev, [selectedCandId]: msgs }));
       return;
     }
-    await base44.entities.Message.create({
+
+    await MessagesEntity.create({
       sender_id: officer.id,
       sender_name: officer.full_name,
       channel,
@@ -174,7 +157,6 @@ export default function Messages() {
       {/* Candidate chat layout */}
       {channel === "candidates" && (
         <div className="flex flex-1 overflow-hidden">
-          {/* Candidate list */}
           <div className="w-56 flex-shrink-0 border-r border-gray-800 overflow-y-auto">
             {candidates.length === 0 && <p className="text-gray-600 text-xs p-4">No candidates.</p>}
             {candidates.map(cand => {
@@ -202,7 +184,6 @@ export default function Messages() {
             })}
           </div>
 
-          {/* Chat area */}
           <div className="flex-1 flex flex-col overflow-hidden">
             {!selectedCandId ? (
               <div className="flex-1 flex items-center justify-center text-gray-600 text-sm">Select a candidate to view chat</div>
@@ -223,7 +204,7 @@ export default function Messages() {
                         </div>
                         <div className={`max-w-[75%] ${isMe ? "items-end" : "items-start"} flex flex-col`}>
                           <p className={`text-xs text-gray-500 mb-1 ${isMe ? "text-right" : ""}`}>
-                            {msg.sender_name} • {msg.created_date ? format(new Date(msg.created_date), "HH:mm") : ""}
+                            {msg.sender_name} • {msg.created_at ? format(new Date(msg.created_at), "HH:mm") : ""}
                           </p>
                           <div className={`px-4 py-2.5 rounded-2xl text-sm ${isMe ? "bg-purple-700 text-white" : "bg-gray-800 text-gray-200"}`}>
                             {msg.content}
@@ -261,10 +242,12 @@ export default function Messages() {
                   </div>
                   <div className={`max-w-[75%] ${isMe ? "items-end" : "items-start"} flex flex-col`}>
                     <p className={`text-xs text-gray-500 mb-1 ${isMe ? "text-right" : ""}`}>
-                      {m.sender_name} • {m.created_date ? format(new Date(m.created_date), "HH:mm") : ""}
+                      {m.sender_name} • {m.created_at ? format(new Date(m.created_at), "HH:mm") : ""}
                     </p>
                     <div className={`px-4 py-2.5 rounded-2xl text-sm ${
-                      isMe ? "bg-blue-700 text-white" : m.channel === "broadcast" ? "bg-yellow-900/40 border border-yellow-800 text-yellow-200" : "bg-gray-800 text-gray-200"
+                      isMe ? "bg-blue-700 text-white" :
+                      m.channel === "broadcast" ? "bg-yellow-900/40 border border-yellow-800 text-yellow-200" :
+                      "bg-gray-800 text-gray-200"
                     }`}>
                       {m.channel === "broadcast" && !isMe && <p className="text-yellow-400 text-xs font-semibold mb-1">📢 Announcement</p>}
                       {m.content}
@@ -298,7 +281,10 @@ export default function Messages() {
 
 function ChannelBtn({ active, onClick, icon: Icon, label, badge }) {
   return (
-    <button onClick={onClick} className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm transition-colors whitespace-nowrap relative ${active ? "text-blue-400 border-b-2 border-blue-500" : "text-gray-500 hover:text-gray-300"}`}>
+    <button onClick={onClick}
+      className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm transition-colors whitespace-nowrap relative ${
+        active ? "text-blue-400 border-b-2 border-blue-500" : "text-gray-500 hover:text-gray-300"
+      }`}>
       <Icon className="w-4 h-4" /> {label}
       {badge > 0 && (
         <span className="absolute top-1.5 right-2 bg-red-600 text-white text-xs w-4 h-4 rounded-full flex items-center justify-center font-bold">

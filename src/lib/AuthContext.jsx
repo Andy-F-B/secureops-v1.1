@@ -1,144 +1,136 @@
+// src/lib/AuthContext.jsx
+// Full replacement for Base44 AuthContext using Supabase Auth
+
 import React, { createContext, useState, useContext, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
-import { appParams } from '@/lib/app-params';
-import { createAxiosClient } from '@base44/sdk/dist/utils/axios-client';
+import { supabase } from '@/api/supabaseClient';
 
 const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
+  const [session, setSession] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
-  const [isLoadingPublicSettings, setIsLoadingPublicSettings] = useState(true);
   const [authError, setAuthError] = useState(null);
-  const [appPublicSettings, setAppPublicSettings] = useState(null); // Contains only { id, public_settings }
 
   useEffect(() => {
-    checkAppState();
-  }, []);
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      setIsAuthenticated(!!session);
+      setIsLoadingAuth(false);
+    });
 
-  const checkAppState = async () => {
-    try {
-      setIsLoadingPublicSettings(true);
-      setAuthError(null);
-      
-      // First, check app public settings (with token if available)
-      // This will tell us if auth is required, user not registered, etc.
-      const appClient = createAxiosClient({
-        baseURL: `/api/apps/public`,
-        headers: {
-          'X-App-Id': appParams.appId
-        },
-        token: appParams.token, // Include token if available
-        interceptResponses: true
-      });
-      
-      try {
-        const publicSettings = await appClient.get(`/prod/public-settings/by-id/${appParams.appId}`);
-        setAppPublicSettings(publicSettings);
-        
-        // If we got the app public settings successfully, check if user is authenticated
-        if (appParams.token) {
-          await checkUserAuth();
-        } else {
-          setIsLoadingAuth(false);
-          setIsAuthenticated(false);
-        }
-        setIsLoadingPublicSettings(false);
-      } catch (appError) {
-        console.error('App state check failed:', appError);
-        
-        // Handle app-level errors
-        if (appError.status === 403 && appError.data?.extra_data?.reason) {
-          const reason = appError.data.extra_data.reason;
-          if (reason === 'auth_required') {
-            setAuthError({
-              type: 'auth_required',
-              message: 'Authentication required'
-            });
-          } else if (reason === 'user_not_registered') {
-            setAuthError({
-              type: 'user_not_registered',
-              message: 'User not registered for this app'
-            });
-          } else {
-            setAuthError({
-              type: reason,
-              message: appError.message
-            });
-          }
-        } else {
-          setAuthError({
-            type: 'unknown',
-            message: appError.message || 'Failed to load app'
-          });
-        }
-        setIsLoadingPublicSettings(false);
+    // Listen for auth state changes (login, logout, token refresh)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        setSession(session);
+        setUser(session?.user ?? null);
+        setIsAuthenticated(!!session);
         setIsLoadingAuth(false);
       }
-    } catch (error) {
-      console.error('Unexpected error:', error);
-      setAuthError({
-        type: 'unknown',
-        message: error.message || 'An unexpected error occurred'
-      });
-      setIsLoadingPublicSettings(false);
-      setIsLoadingAuth(false);
+    );
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // ── LOGIN with email + password ──────────────────────────
+  const login = async (email, password) => {
+    setAuthError(null);
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) {
+      setAuthError({ type: 'auth_error', message: error.message });
+      throw error;
     }
+    return data;
   };
 
-  const checkUserAuth = async () => {
-    try {
-      // Now check if the user is authenticated
-      setIsLoadingAuth(true);
-      const currentUser = await base44.auth.me();
-      setUser(currentUser);
-      setIsAuthenticated(true);
-      setIsLoadingAuth(false);
-    } catch (error) {
-      console.error('User auth check failed:', error);
-      setIsLoadingAuth(false);
-      setIsAuthenticated(false);
-      
-      // If user auth fails, it might be an expired token
-      if (error.status === 401 || error.status === 403) {
-        setAuthError({
-          type: 'auth_required',
-          message: 'Authentication required'
-        });
-      }
-    }
+  // ── OFFICER PIN LOGIN (clock-in flow) ────────────────────
+  // Officers log in with employee_id + PIN (not email/password)
+  // This checks the officers table directly
+  const officerPinLogin = async (companyCode, employeeId, pin) => {
+    const { data, error } = await supabase
+      .from('officers')
+      .select('*')
+      .eq('company_code', companyCode)
+      .eq('employee_id', employeeId)
+      .eq('pin', pin)
+      .single();
+    if (error || !data) throw new Error('Invalid employee ID or PIN');
+    return data;
   };
 
-  const logout = (shouldRedirect = true) => {
+  // ── CANDIDATE PIN LOGIN ──────────────────────────────────
+  const candidatePinLogin = async (companyCode, candidateId, pin) => {
+    const { data, error } = await supabase
+      .from('candidates')
+      .select('*')
+      .eq('company_code', companyCode)
+      .eq('candidate_id', candidateId)
+      .eq('pin', pin)
+      .single();
+    if (error || !data) throw new Error('Invalid candidate ID or PIN');
+    return data;
+  };
+
+  // ── SIGN UP ──────────────────────────────────────────────
+  const signUp = async (email, password, metadata = {}) => {
+    setAuthError(null);
+    // metadata should include: { full_name, company_code, role }
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: metadata }
+    });
+    if (error) {
+      setAuthError({ type: 'signup_error', message: error.message });
+      throw error;
+    }
+    return data;
+  };
+
+  // ── LOGOUT ───────────────────────────────────────────────
+  const logout = async () => {
+    await supabase.auth.signOut();
     setUser(null);
+    setSession(null);
     setIsAuthenticated(false);
-    
-    if (shouldRedirect) {
-      // Use the SDK's logout method which handles token cleanup and redirect
-      base44.auth.logout(window.location.href);
-    } else {
-      // Just remove the token without redirect
-      base44.auth.logout();
-    }
   };
 
-  const navigateToLogin = () => {
-    // Use the SDK's redirectToLogin method
-    base44.auth.redirectToLogin(window.location.href);
+  // ── PASSWORD RESET ───────────────────────────────────────
+  const resetPassword = async (email) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`
+    });
+    if (error) throw error;
+  };
+
+  // ── GET COMPANY CODE from current user ───────────────────
+  const getCompanyCode = () => {
+    return user?.user_metadata?.company_code ?? null;
+  };
+
+  // ── GET ROLE from current user ───────────────────────────
+  const getRole = () => {
+    return user?.user_metadata?.role ?? null;
   };
 
   return (
-    <AuthContext.Provider value={{ 
-      user, 
-      isAuthenticated, 
+    <AuthContext.Provider value={{
+      user,
+      session,
+      isAuthenticated,
       isLoadingAuth,
-      isLoadingPublicSettings,
       authError,
-      appPublicSettings,
+      login,
       logout,
-      navigateToLogin,
-      checkAppState
+      signUp,
+      resetPassword,
+      officerPinLogin,
+      candidatePinLogin,
+      getCompanyCode,
+      getRole,
     }}>
       {children}
     </AuthContext.Provider>

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { WhitelabelConfig, Officers as OfficersEntity } from "@/api/supabaseClient";
 import { Shield, Eye, EyeOff, ArrowLeft } from "lucide-react";
 import { createPageUrl } from "@/utils";
 
@@ -23,15 +23,15 @@ export default function OfficerLogin() {
     try {
       const codeUpper = companyCode.trim().toUpperCase();
       const [configs, officers] = await Promise.all([
-        base44.entities.WhitelabelConfig.filter({ company_code: codeUpper, setup_complete: true }, "-created_date", 1),
-        base44.entities.Officer.filter({ employee_id: employeeId.trim(), company_code: codeUpper }, "full_name", 1)
+        WhitelabelConfig.list({ company_code: codeUpper, setup_complete: true }),
+        OfficersEntity.list({ employee_id: employeeId.trim(), company_code: codeUpper }),
       ]);
 
-      if (configs.length === 0) {
+      if (!configs || configs.length === 0) {
         setError("Company code not found.");
         return;
       }
-      if (officers.length === 0) {
+      if (!officers || officers.length === 0) {
         setError("Employee ID not found for this company.");
         return;
       }
@@ -48,6 +48,9 @@ export default function OfficerLogin() {
 
       sessionStorage.setItem("secureops_officer", JSON.stringify(officer));
       window.location.href = createPageUrl("Dashboard");
+    } catch (err) {
+      console.error("Login error:", err);
+      setError("An error occurred. Please try again.");
     } finally {
       setLoading(false);
     }

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { OfficerRecord, Officer, uploadFile, getSignedUrl } from "@/api/supabaseClient";
 import { Plus, X, FileText, Upload, Loader2 } from "lucide-react";
 
 const RECORD_TYPES = [
@@ -12,7 +12,7 @@ const RECORD_TYPES = [
   { value: "termination", label: "Termination", color: "text-red-600 bg-red-900/50" },
 ];
 
-export default function OfficerRecordTab({ officerId, officerName, onTerminate }) {
+export default function OfficerRecordTab({ officerId, officerName, companyCode, onTerminate }) {
   const [records, setRecords] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ type: "commendation", date: new Date().toISOString().split("T")[0], written_by: "", reason: "" });
@@ -26,28 +26,37 @@ export default function OfficerRecordTab({ officerId, officerName, onTerminate }
 
   const loadRecords = async () => {
     setLoading(true);
-    const r = await base44.entities.OfficerRecord.filter({ officer_id: officerId }, "-date", 100);
+    const r = await OfficerRecord.list({ officer_id: officerId });
     setRecords(r);
     setLoading(false);
   };
 
   const handleFileUpload = async (file) => {
     setUploading(true);
-    const { file_url } = await base44.integrations.Core.UploadFile({ file });
-    setForm(f => ({ ...f, document_url: file_url }));
+    const ext = file.name.split(".").pop();
+    const path = `${officerId}/${Date.now()}.${ext}`;
+    const storagePath = await uploadFile("officer-records", file, path);
+    setForm(f => ({ ...f, document_path: storagePath }));
     setUploading(false);
+  };
+
+  const handleViewDocument = async (path) => {
+    const url = await getSignedUrl("officer-records", path);
+    window.open(url, "_blank");
   };
 
   const handleSave = async () => {
     setSaving(true);
-    await base44.entities.OfficerRecord.create({
+    await OfficerRecord.create({
       ...form,
       officer_id: officerId,
       officer_name: officerName,
+      company_code: companyCode,
+      document_url: form.document_path || null,
     });
 
     if (form.type === "termination") {
-      await base44.entities.Officer.update(officerId, { status: "inactive" });
+      await Officer.update(officerId, { status: "inactive" });
       onTerminate && onTerminate();
     }
 
@@ -86,10 +95,10 @@ export default function OfficerRecordTab({ officerId, officerName, onTerminate }
               <div className="flex items-center justify-between mt-3">
                 <p className="text-gray-500 text-xs">{r.written_by ? `By: ${r.written_by}` : ""}</p>
                 {r.document_url && (
-                  <a href={r.document_url} target="_blank" rel="noopener noreferrer"
+                  <button onClick={() => handleViewDocument(r.document_url)}
                     className="flex items-center gap-1 text-blue-400 text-xs hover:underline">
                     <FileText className="w-3 h-3" /> View Document
-                  </a>
+                  </button>
                 )}
               </div>
             </div>
@@ -132,12 +141,12 @@ export default function OfficerRecordTab({ officerId, officerName, onTerminate }
               </div>
               <div>
                 <label className="text-gray-400 text-sm block mb-1">Document (optional)</label>
-                {form.document_url ? (
+                {form.document_path ? (
                   <div className="flex items-center gap-2">
-                    <a href={form.document_url} target="_blank" rel="noopener noreferrer" className="text-blue-400 text-sm flex items-center gap-1 hover:underline">
+                    <button onClick={() => handleViewDocument(form.document_path)} className="text-blue-400 text-sm flex items-center gap-1 hover:underline">
                       <FileText className="w-4 h-4" /> Document uploaded
-                    </a>
-                    <button onClick={() => setForm(f => ({ ...f, document_url: null }))} className="text-gray-500 hover:text-red-400 text-xs">Remove</button>
+                    </button>
+                    <button onClick={() => setForm(f => ({ ...f, document_path: null }))} className="text-gray-500 hover:text-red-400 text-xs">Remove</button>
                   </div>
                 ) : (
                   <label className="flex items-center gap-2 cursor-pointer border border-dashed border-gray-700 rounded-lg px-4 py-3 hover:border-blue-600 transition-colors">
