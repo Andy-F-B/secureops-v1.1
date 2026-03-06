@@ -29,7 +29,7 @@ const THEME_COLORS = [
 const TOTAL_STEPS = 8;
 
 export default function WhitelabelSetup() {
-  const [phase, setPhase] = useState("code"); // code | wizard | done
+  const [phase, setPhase] = useState("code");
   const [code, setCode] = useState("");
   const [codeError, setCodeError] = useState("");
   const [config, setConfig] = useState(null);
@@ -39,7 +39,6 @@ export default function WhitelabelSetup() {
   const [showSuccess, setShowSuccess] = useState(false);
   const [showTutorial, setShowTutorial] = useState(false);
 
-  // Wizard state
   const [companyName, setCompanyName] = useState("");
   const [companyCode, setCompanyCode] = useState("");
   const [features, setFeatures] = useState(ALL_FEATURES.map(f => f.key));
@@ -73,10 +72,7 @@ export default function WhitelabelSetup() {
       if (a.customHex) setCustomHex(a.customHex);
       if (a.logoUrl) setLogoUrl(a.logoUrl);
     }
-    if (cfg.setup_complete) {
-      setPhase("done");
-      return;
-    }
+    if (cfg.setup_complete) { setPhase("done"); return; }
     setStep(cfg.setup_step || 0);
     setPhase("wizard");
   };
@@ -88,7 +84,6 @@ export default function WhitelabelSetup() {
     const ext = file.name.split(".").pop();
     const path = `${code.trim() || "setup"}/${Date.now()}.${ext}`;
     const storagePath = await uploadFile("company-logos", file, path);
-    // Generate a signed URL to preview the logo immediately
     const signedUrl = await getSignedUrl("company-logos", storagePath, 3600);
     setLogoUrl(signedUrl);
     setLogoUploading(false);
@@ -139,9 +134,9 @@ export default function WhitelabelSetup() {
     });
 
     // Create default admin officer (ADMIN001 / 1234) if not already exists
-    const existingAdmin = await Officers.list({ employee_id: "ADMIN001", company_code: code_upper });
+    const existingAdmin = await OfficersEntity.list({ employee_id: "ADMIN001", company_code: code_upper });
     if (existingAdmin.length === 0) {
-      await Officers.create({
+      await OfficersEntity.create({
         employee_id: "ADMIN001",
         full_name: "Admin",
         pin: "1234",
@@ -169,9 +164,9 @@ export default function WhitelabelSetup() {
     const namedAdmins = admins.filter(a => a.name);
     for (const a of namedAdmins) {
       const id = a.employee_id || `ADMIN${String(namedAdmins.indexOf(a) + 2).padStart(3, "0")}`;
-      const exists = await Officers.list({ employee_id: id, company_code: code_upper });
+      const exists = await OfficersEntity.list({ employee_id: id, company_code: code_upper });
       if (exists.length === 0) {
-        await Officers.create({
+        await OfficersEntity.create({
           employee_id: id,
           full_name: a.name,
           pin: a.pin || "1234",
@@ -187,9 +182,9 @@ export default function WhitelabelSetup() {
     for (let i = 0; i < namedOfficers.length; i++) {
       const o = namedOfficers[i];
       const id = o.employee_id || `OFF${String(i + 1).padStart(3, "0")}`;
-      const exists = await Officers.list({ employee_id: id, company_code: code_upper });
+      const exists = await OfficersEntity.list({ employee_id: id, company_code: code_upper });
       if (exists.length === 0) {
-        await Officers.create({
+        await OfficersEntity.create({
           employee_id: id,
           full_name: o.name,
           pin: o.pin || "1234",
@@ -246,10 +241,7 @@ export default function WhitelabelSetup() {
             </button>
           </div>
         </div>
-
-        {showTutorial && (
-          <TutorialOverlay onClose={() => setShowTutorial(false)} />
-        )}
+        {showTutorial && <TutorialOverlay onClose={() => setShowTutorial(false)} />}
       </div>
     );
   }
@@ -291,13 +283,10 @@ export default function WhitelabelSetup() {
     );
   }
 
-  // Wizard
   return (
     <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
       {showSuccess && <SuccessAnimation />}
-
       <div className="w-full max-w-2xl">
-        {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-2">
             <Shield className="w-5 h-5 text-blue-400" />
@@ -306,22 +295,17 @@ export default function WhitelabelSetup() {
           <span className="text-gray-500 text-xs">Code: <span className="text-white font-mono">{code || config?.code}</span></span>
         </div>
 
-        {/* Progress */}
         <div className="mb-8">
           <div className="flex items-center justify-between mb-2">
             <span className="text-gray-400 text-xs">Step {step + 1} of {TOTAL_STEPS + 1}</span>
             <span className="text-blue-400 text-xs font-semibold">{pct}% complete</span>
           </div>
           <div className="w-full h-2 bg-gray-800 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-blue-600 rounded-full transition-all duration-500"
-              style={{ width: `${pct}%` }}
-            />
+            <div className="h-full bg-blue-600 rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
           </div>
         </div>
 
         <div className="bg-gray-900 border border-gray-800 rounded-2xl p-7">
-          {/* Step 0: Company Name */}
           {step === 0 && (
             <WizardStep title="What's your company name?" desc="This will be displayed across your portal.">
               <input
@@ -334,9 +318,8 @@ export default function WhitelabelSetup() {
             </WizardStep>
           )}
 
-          {/* Step 1: Company Code */}
           {step === 1 && (
-            <WizardStep title="Choose your company code" desc="Officers and candidates will enter this code at login to access your portal. It can be your company name or abbreviation (e.g. APEX).">
+            <WizardStep title="Choose your company code" desc="Officers and candidates will enter this code at login to access your portal.">
               <input
                 value={companyCode}
                 onChange={e => setCompanyCode(e.target.value.toUpperCase().replace(/\s/g, ""))}
@@ -354,7 +337,6 @@ export default function WhitelabelSetup() {
             </WizardStep>
           )}
 
-          {/* Step 2: Features */}
           {step === 2 && (
             <WizardStep title="Which features do you need?" desc="Select the modules you want enabled in your portal. You can change these later.">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -362,11 +344,7 @@ export default function WhitelabelSetup() {
                   <button
                     key={f.key}
                     onClick={() => toggleFeature(f.key)}
-                    className={`flex items-center gap-3 p-3 rounded-xl border text-left transition-colors ${
-                      features.includes(f.key)
-                        ? "border-blue-600 bg-blue-900/20"
-                        : "border-gray-700 bg-gray-800 hover:border-gray-600"
-                    }`}
+                    className={`flex items-center gap-3 p-3 rounded-xl border text-left transition-colors ${features.includes(f.key) ? "border-blue-600 bg-blue-900/20" : "border-gray-700 bg-gray-800 hover:border-gray-600"}`}
                   >
                     <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 ${features.includes(f.key) ? "border-blue-500 bg-blue-600" : "border-gray-600"}`}>
                       {features.includes(f.key) && <Check className="w-3 h-3 text-white" />}
@@ -381,7 +359,6 @@ export default function WhitelabelSetup() {
             </WizardStep>
           )}
 
-          {/* Step 3: Admin Users */}
           {step === 3 && (
             <WizardStep title="Add admin users" desc="Admins have full portal access. Login ID is auto-assigned but editable.">
               <div className="space-y-3">
@@ -419,7 +396,6 @@ export default function WhitelabelSetup() {
             </WizardStep>
           )}
 
-          {/* Step 4: Officers */}
           {step === 4 && (
             <WizardStep title="Add initial officers" desc="Pre-load your security officers. Login ID is auto-assigned but editable.">
               <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
@@ -458,7 +434,6 @@ export default function WhitelabelSetup() {
             </WizardStep>
           )}
 
-          {/* Step 5: Sites */}
           {step === 5 && (
             <WizardStep title="Add your sites" desc="Enter your major client sites. You can add more from the Sites page later.">
               <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
@@ -486,19 +461,13 @@ export default function WhitelabelSetup() {
             </WizardStep>
           )}
 
-          {/* Step 6: Theme & Logo */}
           {step === 6 && (
             <WizardStep title="Brand your portal" desc="Pick a theme color and optionally upload your company logo.">
-              {/* Logo Upload */}
               <div className="mb-6">
                 <p className="text-gray-300 text-sm font-semibold mb-3 flex items-center gap-2"><Image className="w-4 h-4" /> Company Logo</p>
                 <div className="flex items-center gap-4">
                   <div className="w-16 h-16 rounded-xl bg-gray-800 border border-gray-700 flex items-center justify-center overflow-hidden flex-shrink-0">
-                    {logoUrl ? (
-                      <img src={logoUrl} alt="logo" className="w-full h-full object-cover" />
-                    ) : (
-                      <Shield className="w-8 h-8 text-gray-600" />
-                    )}
+                    {logoUrl ? <img src={logoUrl} alt="logo" className="w-full h-full object-cover" /> : <Shield className="w-8 h-8 text-gray-600" />}
                   </div>
                   <div>
                     <label className="cursor-pointer flex items-center gap-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 text-sm px-4 py-2 rounded-xl transition-colors">
@@ -508,9 +477,7 @@ export default function WhitelabelSetup() {
                     </label>
                     <p className="text-gray-600 text-xs mt-1">PNG, JPG or SVG. Shown in sidebar.</p>
                   </div>
-                  {logoUrl && (
-                    <button onClick={() => setLogoUrl("")} className="text-gray-500 hover:text-red-400"><X className="w-4 h-4" /></button>
-                  )}
+                  {logoUrl && <button onClick={() => setLogoUrl("")} className="text-gray-500 hover:text-red-400"><X className="w-4 h-4" /></button>}
                 </div>
               </div>
 
@@ -543,7 +510,6 @@ export default function WhitelabelSetup() {
                 </div>
               </div>
 
-              {/* Preview */}
               <div className="bg-gray-800 rounded-xl p-4 border border-gray-700">
                 <p className="text-gray-400 text-xs mb-3">Preview</p>
                 <div className="flex items-center gap-3">
@@ -562,7 +528,6 @@ export default function WhitelabelSetup() {
             </WizardStep>
           )}
 
-          {/* Step 7: Review & Submit */}
           {step === 7 && (
             <WizardStep title="Review & launch" desc="Everything looks good? Submit to create your portal.">
               <div className="space-y-3 text-sm">
@@ -590,7 +555,6 @@ export default function WhitelabelSetup() {
             </WizardStep>
           )}
 
-          {/* Nav buttons */}
           <div className="flex items-center justify-between mt-8 pt-6 border-t border-gray-800">
             <button
               onClick={handleBack}
@@ -611,7 +575,6 @@ export default function WhitelabelSetup() {
           </div>
         </div>
       </div>
-
       {showTutorial && <TutorialOverlay onClose={() => setShowTutorial(false)} />}
     </div>
   );
