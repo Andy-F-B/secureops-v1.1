@@ -107,7 +107,7 @@ export default function HRDashboard() {
       emergency_contact_name: cand.emergency_contact_name || "",
       emergency_contact_phone: cand.emergency_contact_phone || "",
       address: cand.address || "",
-      date_of_birth: cand.date_of_birth || "",
+      date_of_birth: cand.date_of_birth || null,
       notes: `Onboarding: ${cand.candidate_id}. Test score: ${rec?.mock_test_score ?? "N/A"}%. Video: ${rec?.intro_video_status || "N/A"}. Docs uploaded: ${docs.length}.`,
       _licenseDoc: licenseDoc || null,
       _guardCardNumber: cand.guard_card_number || "",
@@ -121,7 +121,12 @@ export default function HRDashboard() {
     const { cand } = approveModal;
     const { _licenseDoc, _guardCardNumber, _hasGuardCard, ...officerData } = approveForm;
 
+  
+    if (!officerData.date_of_birth) officerData.date_of_birth = null;
+    if (!officerData.hire_date) officerData.hire_date = null;
+
     const newOfficer = await OfficersEntity.create({ ...officerData, company_code: officer?.company_code });
+   
 
     if (_hasGuardCard || _guardCardNumber || _licenseDoc) {
       await Certifications.create({
